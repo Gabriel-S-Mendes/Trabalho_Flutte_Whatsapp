@@ -105,12 +105,12 @@ class _LoginScreenState extends State<LoginScreen> {
 
               // Email
               CustomInput(
-                labelText: 'Email',
-                hint: 'seu.email@gmail.com',
-                controller: _emailController, obscureText: null,
-              ),
-              const SizedBox(height: 16),
-
+                      labelText: 'Email',
+                      hint: 'seu.email@gmail.com',
+                      controller: _emailController,
+                      // CORREÇÃO: Altere 'null' para 'false'
+                      obscureText: false, 
+),
               // Senha
               CustomInput(
                 labelText: 'Senha',
