@@ -1,0 +1,48 @@
+name: chat_app
+description: "App de chat em tempo real com Flutter e Supabase"
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.0.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Supabase & Backend
+  supabase_flutter: ^2.8.0
+  flutter_dotenv: ^5.1.0
+
+  # State Management
+  provider: ^6.0.0
+
+  # UI & Navigation
+  cupertino_icons: ^1.0.2
+
+  # File & Image Handling
+  image_picker: ^1.0.0
+  file_picker: ^5.3.0
+  cached_network_image: ^3.3.0
+
+  # Utilities
+  uuid: ^4.0.0
+  intl: ^0.19.0
+  http: ^1.1.0
+
+  # JSON Serialization
+  json_annotation: ^4.8.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+  build_runner: ^2.4.0
+  json_serializable: ^6.7.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - .env
