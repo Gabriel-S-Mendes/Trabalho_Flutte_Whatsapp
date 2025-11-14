@@ -8,7 +8,7 @@ class CustomInput extends StatelessWidget {
     super.key,
     required this.labelText,
     required this.hint,
-    required this.controller, // 
+    required this.controller, required bool obscureText, // 
   });
 
   @override

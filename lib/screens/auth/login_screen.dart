@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../services/auth_service.dart';
-import '../../widgets/custom_input.dart';
+import '../../ui/widgets/custom_input.dart';
 
 class LoginScreen extends StatefulWidget {
   final Function(bool) onLoginSuccess;
@@ -107,7 +107,7 @@ class _LoginScreenState extends State<LoginScreen> {
               CustomInput(
                 labelText: 'Email',
                 hint: 'seu.email@gmail.com',
-                controller: _emailController,
+                controller: _emailController, obscureText: null,
               ),
               const SizedBox(height: 16),
 
