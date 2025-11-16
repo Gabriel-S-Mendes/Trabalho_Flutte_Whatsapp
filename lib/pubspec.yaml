@@ -12,12 +12,7 @@ dependencies:
   flutter:
     sdk: flutter
 
-  # Supabase & Backend
-  # Versão atualizada para as últimas correções e features
-  supabase_flutter: 2.10.3 
-  flutter_dotenv: ^5.1.0
-
-  # State Management
+# State Management
   provider: ^6.1.2
 
   # UI & Navigation
@@ -27,7 +22,7 @@ dependencies:
   image_picker: ^1.1.2
   file_picker: ^6.2.0
   cached_network_image: ^3.3.1
-
+  path_provider: ^2.1.3
   # Utilities
   uuid: ^4.4.0
   intl: ^0.19.0
@@ -35,10 +30,12 @@ dependencies:
 
   # JSON Serialization
   json_annotation: ^4.9.0
+  supabase_flutter: 2.10.3
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  
   
   # Lints atualizados para melhores práticas de código
   flutter_lints: ^4.0.0 

@@ -7,6 +7,8 @@ import 'home_page.dart';
 import 'main.dart';      // Para acessar o cliente 'supabase'
 
 class SignUpPage extends StatefulWidget {
+  const SignUpPage({super.key});
+
   @override
   _SignUpPageState createState() => _SignUpPageState();
 }
@@ -102,7 +104,7 @@ class _SignUpPageState extends State<SignUpPage> {
             ),
           );
           Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (context) => HomePage()),
+            MaterialPageRoute(builder: (context) => const HomePage()),
           );
         }
       }
@@ -183,19 +185,19 @@ class _SignUpPageState extends State<SignUpPage> {
                 const SizedBox(height: 32),
                 
                 // Widget de Foto de Perfil
-                GestureDetector(
-                  onTap: _pickImage,
-                  child: CircleAvatar(
-                    radius: 60,
-                    backgroundColor: Colors.grey[800],
-                    backgroundImage: _avatarFile != null 
-                        ? FileImage(_avatarFile!) 
-                        : null,
-                    child: _avatarFile == null
-                        ? const Icon(Icons.camera_alt, size: 40, color: Colors.white)
-                        : null,
-                  ),
-                ),
+               GestureDetector(
+                onTap: _pickImage,
+                 child: CircleAvatar(
+                     radius: 60,
+                         backgroundColor: Colors.grey[800],
+                            backgroundImage: _avatarFile != null 
+                               ? FileImage(_avatarFile!) // <- Se o _avatarFile for nulo, a imagem não aparece.
+                                 : null,
+                                        child: _avatarFile == null
+                                            ? const Icon(Icons.camera_alt, size: 40, color: Colors.white)
+                                              : null,
+                                                 ),
+                                                    ),
                 const SizedBox(height: 10),
                 const Text('Clique para adicionar foto', textAlign: TextAlign.center),
                 const SizedBox(height: 30),
@@ -225,7 +227,7 @@ class _SignUpPageState extends State<SignUpPage> {
                     }
                     return null;
                   },
-                ),
+                ),  
                 const SizedBox(height: 16),
                 TextFormField(
                   controller: _passwordController,
