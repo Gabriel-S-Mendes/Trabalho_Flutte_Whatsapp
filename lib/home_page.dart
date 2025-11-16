@@ -2,21 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'login_page.dart';
 import 'main.dart';
-import 'user_list_page.dart'; // 💡 NOVO: Importa a tela para listar os usuários (contatos)
+import 'user_list_page.dart'; // Importa a tela para listar os usuários (contatos)
 
-class HomePage extends StatefulWidget {
+// Convertido para StatelessWidget, pois o estado (StatefulWidget) não é mais necessário
+// nesta tela, que agora só hospeda a UserListPage.
+class HomePage extends StatelessWidget {
   const HomePage({super.key});
 
-  @override
-  State<HomePage> createState() => _HomePageState();
-}
-
-class _HomePageState extends State<HomePage> {
-  // Função de Logout (mantida)
-  Future<void> _signOut() async {
+  // Função de Logout
+  Future<void> _signOut(BuildContext context) async {
     await supabase.auth.signOut();
 
-    if (mounted) {
+    // Verifica se o Widget ainda está montado antes de navegar
+    if (context.mounted) {
       // Retorna para a tela de login
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (context) => const LoginPage()),
@@ -26,55 +24,25 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    // Acessa o email do usuário logado
     final userEmail = supabase.auth.currentUser?.email ?? 'Usuário';
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Chat DM'),
+        // Título alterado para refletir o novo conteúdo da tela
+        title: const Text('Contatos do Chat'),
         actions: [
-          // 💡 Botão que leva para a lista de todos os usuários (Contatos)
-          IconButton(
-            icon: const Icon(Icons.people_alt),
-            tooltip: 'Lista de Contatos',
-            onPressed: () {
-              // Navega para a lista de usuários (Passo 2)
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (context) => const UserListPage()),
-              );
-            },
-          ),
+          // O botão de contatos foi removido, pois a lista agora é o corpo da tela.
           IconButton(
             icon: const Icon(Icons.logout),
-            tooltip: 'Sair',
-            onPressed: _signOut,
+            tooltip: 'Sair (Logado como: $userEmail)',
+            // Chama a função _signOut passando o contexto
+            onPressed: () => _signOut(context),
           )
         ],
       ),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            const Text(
-              'Bem-vindo ao seu aplicativo de DM!',
-              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'Toque no ícone de pessoas na barra superior para iniciar uma conversa privada com qualquer usuário cadastrado.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.grey),
-            ),
-            const SizedBox(height: 24),
-            // Exibe o email do usuário logado
-            Text(
-              'Logado como: $userEmail',
-              style: const TextStyle(fontWeight: FontWeight.w500),
-            ),
-          ],
-        ),
-      ),
+
+      // MODIFICAÇÃO PRINCIPAL: Substitui o conteúdo estático pela UserListPage
+      body: const UserListPage(),
     );
   }
 }
