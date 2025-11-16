@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'main.dart';
-import 'package:timeago/timeago.dart' as timeago;
 
 // 🎯 Widget de Exibição de Mensagem Individual
 class ChatBubble extends StatelessWidget {
@@ -49,12 +48,13 @@ class ChatBubble extends StatelessWidget {
                 Text(
                   message,
                   style: TextStyle(
-                    color: isCurrentUser ? Colors.white : Colors.white,
+                    color: Colors.white,
                   ),
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  timeago.format(sentAt, locale: 'pt'),
+                  // Exibe data/hora simples
+                  "${sentAt.day.toString().padLeft(2, '0')}/${sentAt.month.toString().padLeft(2, '0')} ${sentAt.hour.toString().padLeft(2, '0')}:${sentAt.minute.toString().padLeft(2, '0')}",
                   style: TextStyle(
                     color:
                         isCurrentUser ? Colors.white70 : Colors.grey.shade300,
@@ -77,7 +77,6 @@ class DirectMessagePage extends StatefulWidget {
     required this.recipientProfile,
   });
 
-  // O perfil do usuário com quem estamos conversando.
   final Map<String, dynamic> recipientProfile;
 
   @override
@@ -92,15 +91,13 @@ class _DirectMessagePageState extends State<DirectMessagePage> {
   late final String currentUserId;
   late final String recipientId;
 
-  // Variável para evitar o reenvio rápido
   bool _isSending = false;
 
   @override
   void initState() {
     super.initState();
-    // Verifica se o usuário atual está logado
+
     if (currentUser == null) {
-      // Se não estiver logado, não há stream de mensagens
       _messagesStream = const Stream.empty();
       return;
     }
@@ -109,37 +106,22 @@ class _DirectMessagePageState extends State<DirectMessagePage> {
     recipientId = widget.recipientProfile['id'] as String;
     _scrollController = ScrollController();
 
-    // 1. A consulta de mensagens privadas é mais complexa:
-    //    Ela precisa retornar mensagens onde (sender_id = A E recipient_id = B)
-    //    OU (sender_id = B E recipient_id = A)
-    //    Para o Supabase, isso é feito com filtros `or`.
     _messagesStream = supabase
         .from('direct_messages')
         .stream(primaryKey: ['id'])
-        // Filtrar mensagens onde:
-        // (sender_id = currentUserId E recipient_id = recipientId)
-        // OU
-        // (sender_id = recipientId E recipient_id = currentUserId)
         .or(
-          'sender_id.eq.$currentUserId,recipient_id.eq.$currentUserId', // Bloco A: Eu sou o remetente OU o destinatário
-          'sender_id.eq.$recipientId,recipient_id.eq.$recipientId', // Bloco B: O outro é o remetente OU o destinatário
+          'sender_id.eq.$currentUserId,recipient_id.eq.$recipientId|sender_id.eq.$recipientId,recipient_id.eq.$currentUserId',
         )
-        // Isso retorna TODAS as mensagens entre os dois IDs.
         .order('created_at', ascending: true);
   }
 
-  // 💬 Função para enviar uma nova mensagem
   Future<void> _sendMessage() async {
-    if (_textController.text.trim().isEmpty || _isSending) {
-      return; // Não envia se o campo estiver vazio ou se já estiver enviando
-    }
+    if (_textController.text.trim().isEmpty || _isSending) return;
 
-    setState(() {
-      _isSending = true; // Define como 'enviando'
-    });
+    setState(() => _isSending = true);
 
     final text = _textController.text.trim();
-    _textController.clear(); // Limpa o campo de texto imediatamente
+    _textController.clear();
 
     try {
       await supabase.from('direct_messages').insert({
@@ -148,7 +130,6 @@ class _DirectMessagePageState extends State<DirectMessagePage> {
         'content': text,
       });
 
-      // Rola para o final da lista após o envio
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _scrollController.animateTo(
           _scrollController.position.maxScrollExtent,
@@ -161,15 +142,10 @@ class _DirectMessagePageState extends State<DirectMessagePage> {
         _showSnackBar(context, 'Erro ao enviar mensagem: ${e.message}');
       }
     } finally {
-      if (mounted) {
-        setState(() {
-          _isSending = false; // Permite o próximo envio
-        });
-      }
+      if (mounted) setState(() => _isSending = false);
     }
   }
 
-  // 🔔 Função auxiliar para exibir SnackBar
   void _showSnackBar(BuildContext context, String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -188,9 +164,8 @@ class _DirectMessagePageState extends State<DirectMessagePage> {
 
   @override
   Widget build(BuildContext context) {
-    final String recipientUsername =
-        widget.recipientProfile['username'] as String? ??
-            'Usuário Desconhecido';
+    final recipientUsername = widget.recipientProfile['username'] as String? ??
+        'Usuário Desconhecido';
 
     return Scaffold(
       appBar: AppBar(
@@ -200,7 +175,6 @@ class _DirectMessagePageState extends State<DirectMessagePage> {
       ),
       body: Column(
         children: [
-          // 2. Visualização das Mensagens em Tempo Real
           Expanded(
             child: StreamBuilder<List<Map<String, dynamic>>>(
               stream: _messagesStream,
@@ -211,13 +185,15 @@ class _DirectMessagePageState extends State<DirectMessagePage> {
 
                 if (snapshot.hasError) {
                   return Center(
-                      child: Text('Erro de conexão: ${snapshot.error}',
-                          style: const TextStyle(color: Colors.redAccent)));
+                    child: Text(
+                      'Erro de conexão: ${snapshot.error}',
+                      style: const TextStyle(color: Colors.redAccent),
+                    ),
+                  );
                 }
 
                 final messages = snapshot.data ?? [];
 
-                // 💡 Rola automaticamente para o final da lista na primeira carga ou quando novas mensagens chegam.
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   if (_scrollController.hasClients) {
                     _scrollController.animateTo(
@@ -239,24 +215,22 @@ class _DirectMessagePageState extends State<DirectMessagePage> {
                   itemCount: messages.length,
                   itemBuilder: (context, index) {
                     final messageData = messages[index];
-                    final String content = messageData['content'] as String;
-                    final String senderId = messageData['sender_id'] as String;
-                    final DateTime sentAt =
+                    final content = messageData['content'] as String;
+                    final senderId = messageData['sender_id'] as String;
+                    final sentAt =
                         DateTime.parse(messageData['created_at'] as String);
-
-                    final bool isCurrentUserMessage = senderId == currentUserId;
+                    final isCurrentUserMessage = senderId == currentUserId;
 
                     return ChatBubble(
                       message: content,
                       isCurrentUser: isCurrentUserMessage,
-                      sentAt: sentAt.toLocal(), // Exibir horário local
+                      sentAt: sentAt.toLocal(),
                     );
                   },
                 );
               },
             ),
           ),
-          // 3. Campo de Entrada para Nova Mensagem
           Padding(
             padding: const EdgeInsets.all(8.0),
             child: Row(
@@ -275,11 +249,10 @@ class _DirectMessagePageState extends State<DirectMessagePage> {
                       contentPadding: const EdgeInsets.symmetric(
                           horizontal: 20, vertical: 10),
                     ),
-                    maxLines: null, // Permite múltiplas linhas
+                    maxLines: null,
                   ),
                 ),
                 const SizedBox(width: 8),
-                // Botão de Envio
                 IconButton(
                   onPressed: _isSending ? null : _sendMessage,
                   icon: Icon(
@@ -288,8 +261,6 @@ class _DirectMessagePageState extends State<DirectMessagePage> {
                         ? Colors.grey
                         : Theme.of(context).primaryColor,
                   ),
-                  // Se estiver enviando, mostra um loader no lugar do ícone
-                  // ou desabilita o botão
                   tooltip: 'Enviar Mensagem',
                 ),
               ],
