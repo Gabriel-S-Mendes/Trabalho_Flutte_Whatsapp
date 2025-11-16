@@ -1,15 +1,21 @@
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart'; // <-- Este import será usado agora
-import 'package:flutter_dotenv/flutter_dotenv.dart';   // <-- Novo import
-import 'splash_page.dart'; // (Ou sua página inicial)
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'splash_page.dart'; // Sua página inicial
 
-
+// 🔑 Configurações do Supabase
 const supabaseUrl = 'https://ftnxnhqvkthlsodmgcof.supabase.co';
-const supabaseKey = String.fromEnvironment('SUPABASE_KEY');
+const supabaseKey =
+    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ0bnhuaHF2a3RobHNvZG1nY29mIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMyNTQzNjAsImV4cCI6MjA3ODgzMDM2MH0.ycb93-y4po6bw8zynRIaBjeGm70MCPzsgQ56Ev_BEWA';
 
 Future<void> main() async {
-  await Supabase.initialize(url: 'https://ftnxnhqvkthlsodmgcof.supabase.co', anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ0bnhuaHF2a3RobHNvZG1nY29mIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMyNTQzNjAsImV4cCI6MjA3ODgzMDM2MH0.ycb93-y4po6bw8zynRIaBjeGm70MCPzsgQ56Ev_BEWA');
-  runApp(MyApp());
+  WidgetsFlutterBinding.ensureInitialized();
+
+  await Supabase.initialize(
+    url: 'https://ftnxnhqvkthlsodmgcof.supabase.co',
+    anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ0bnhuaHF2a3RobHNvZG1nY29mIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMyNTQzNjAsImV4cCI6MjA3ODgzMDM2MH0.ycb93-y4po6bw8zynRIaBjeGm70MCPzsgQ56Ev_BEWA',
+  );
+
+  runApp(const MyApp());
 }
 
 // Helper global para acessar o cliente Supabase
@@ -30,7 +36,7 @@ class MyApp extends StatelessWidget {
           ),
         ),
       ),
-      home: SplashPage(), // Começamos pela Splash Page
+      home: const SplashPage(),
     );
   }
 }
