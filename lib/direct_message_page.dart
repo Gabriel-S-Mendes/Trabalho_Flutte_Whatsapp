@@ -25,7 +25,8 @@ class ChatBubble extends StatelessWidget {
         children: [
           Container(
             constraints: BoxConstraints(
-                maxWidth: MediaQuery.of(context).size.width * 0.75),
+              maxWidth: MediaQuery.of(context).size.width * 0.75,
+            ),
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
               color: isCurrentUser
@@ -45,15 +46,9 @@ class ChatBubble extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  message,
-                  style: TextStyle(
-                    color: Colors.white,
-                  ),
-                ),
+                Text(message, style: const TextStyle(color: Colors.white)),
                 const SizedBox(height: 4),
                 Text(
-                  // Exibe data/hora simples
                   "${sentAt.day.toString().padLeft(2, '0')}/${sentAt.month.toString().padLeft(2, '0')} ${sentAt.hour.toString().padLeft(2, '0')}:${sentAt.minute.toString().padLeft(2, '0')}",
                   style: TextStyle(
                     color:
@@ -106,13 +101,10 @@ class _DirectMessagePageState extends State<DirectMessagePage> {
     recipientId = widget.recipientProfile['id'] as String;
     _scrollController = ScrollController();
 
+    // ✅ Pega todas as mensagens e filtra no cliente
     _messagesStream = supabase
         .from('direct_messages')
-        .stream(primaryKey: ['id'])
-        .or(
-          'sender_id.eq.$currentUserId,recipient_id.eq.$recipientId|sender_id.eq.$recipientId,recipient_id.eq.$currentUserId',
-        )
-        .order('created_at', ascending: true);
+        .stream(primaryKey: ['id']).order('created_at', ascending: true);
   }
 
   Future<void> _sendMessage() async {
@@ -192,7 +184,14 @@ class _DirectMessagePageState extends State<DirectMessagePage> {
                   );
                 }
 
-                final messages = snapshot.data ?? [];
+                // ✅ Filtra no cliente apenas mensagens entre os dois usuários
+                final raw = snapshot.data ?? [];
+                final messages = raw.where((m) {
+                  final s = m['sender_id'] as String?;
+                  final r = m['recipient_id'] as String?;
+                  return (s == currentUserId && r == recipientId) ||
+                      (s == recipientId && r == currentUserId);
+                }).toList();
 
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   if (_scrollController.hasClients) {
@@ -247,7 +246,9 @@ class _DirectMessagePageState extends State<DirectMessagePage> {
                       filled: true,
                       fillColor: Colors.grey.shade800,
                       contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 20, vertical: 10),
+                        horizontal: 20,
+                        vertical: 10,
+                      ),
                     ),
                     maxLines: null,
                   ),
