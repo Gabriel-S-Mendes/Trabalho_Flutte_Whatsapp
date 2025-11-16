@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'login_page.dart';
 import 'main.dart'; // Para acessar o 'supabase' client
+import 'chat_screen.dart'; // 💡 NOVO: Importa a tela de mensagens
 
 // Mude de StatelessWidget para StatefulWidget
 class HomePage extends StatefulWidget {
@@ -86,8 +87,17 @@ class _HomePageState extends State<HomePage> {
                 ),
                 title: Text(room['name'] ?? 'Chat de Grupo'),
                 subtitle: Text('ID da Sala: ${room['id']}'),
+                // 💡 NOVO: AÇÃO AO CLICAR NA CONVERSA
                 onTap: () {
-                  // TODO: PRÓXIMO PASSO - Navegar para a tela de MENSAGENS
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (context) => ChatScreen(
+                        // Passa o ID e o Nome da sala para a próxima tela
+                        roomId: room['id'] as String,
+                        roomName: room['name'] as String,
+                      ),
+                    ),
+                  );
                 },
               );
             },
