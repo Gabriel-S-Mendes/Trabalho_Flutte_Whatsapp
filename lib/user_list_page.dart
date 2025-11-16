@@ -2,42 +2,121 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'main.dart';
 import 'direct_message_page.dart';
+import 'group_chat_page.dart';
+import 'create_group_page.dart';
 
-class UserListPage extends StatefulWidget {
-  const UserListPage({super.key});
+// Modelo para combinar Perfis e Grupos
+class ChatItem {
+  final String id;
+  final String title;
+  final String? avatarUrl;
+  final bool isGroup;
+  final Map<String, dynamic> data;
 
-  @override
-  State<UserListPage> createState() => _UserListPageState();
+  ChatItem({
+    required this.id,
+    required this.title,
+    this.avatarUrl,
+    required this.isGroup,
+    required this.data,
+  });
 }
 
-class _UserListPageState extends State<UserListPage> {
-  // O Stream agora carrega ABSOLUTAMENTE TUDO do servidor.
-  late final Stream<List<Map<String, dynamic>>> _profilesStream;
+class UserListPage extends StatefulWidget {
+  // callback opcional (você não precisa usá-lo agora)
+  final VoidCallback? onRefresh;
+
+  const UserListPage({super.key, this.onRefresh});
+
+  @override
+  State<UserListPage> createState() => UserListPageState();
+}
+
+// <-- Tornamos esta classe PÚBLICA (sem underscore) para poder ser usada em GlobalKey<>
+class UserListPageState extends State<UserListPage> {
+  Future<List<ChatItem>>? _combinedFuture;
   final User? currentUser = supabase.auth.currentUser;
 
-  // Controller e Termo de Busca
   final TextEditingController _searchController = TextEditingController();
   String _searchTerm = '';
 
   @override
   void initState() {
     super.initState();
-
-    if (currentUser != null) {
-      // QUERY MAIS SIMPLES: Apenas busca todos os perfis ordenados.
-      _profilesStream = supabase
-          .from('profiles')
-          .stream(primaryKey: ['id']).order('username', ascending: true);
-    } else {
-      _profilesStream = const Stream.empty();
-    }
-
-    // Adiciona listener para capturar o que o usuário digita
+    loadData();
     _searchController.addListener(_onSearchChanged);
   }
 
+  // <-- Método público para ser chamado de fora via key.currentState?.loadData()
+  void loadData() {
+    if (currentUser != null) {
+      setState(() {
+        _combinedFuture = _fetchCombinedItems();
+      });
+    } else {
+      setState(() {
+        _combinedFuture = Future.value([]);
+      });
+    }
+  }
+
+  // MÉTODO PRINCIPAL: Busca perfis e grupos (Com filtro de duplicatas)
+  Future<List<ChatItem>> _fetchCombinedItems() async {
+    final currentUserId = currentUser!.id;
+
+    // 1. FETCH DOS PERFIS (Usuários)
+    final profilesData = await supabase
+        .from('profiles')
+        .select()
+        .neq('id', currentUserId)
+        .order('username', ascending: true);
+
+    final profiles = (profilesData as List<dynamic>).map((user) {
+      return ChatItem(
+        id: user['id'] as String,
+        title: user['username'] as String? ?? 'Usuário Sem Nome',
+        avatarUrl: user['avatar_url'] as String?,
+        isGroup: false,
+        data: Map<String, dynamic>.from(user as Map),
+      );
+    }).toList();
+
+    // 2. FETCH DOS GRUPOS (USANDO RPC)
+    final groupsData = await supabase.rpc(
+      'get_user_groups',
+      params: {
+        'user_id_input': currentUserId,
+      },
+    );
+
+    // CORREÇÃO CONTRA DUPLICATAS
+    final Set<String> processedGroupIds = {};
+    final List<ChatItem> groups = [];
+
+    for (final group in (groupsData as List<dynamic>)) {
+      final groupId = group['id'] as String;
+
+      if (!processedGroupIds.contains(groupId)) {
+        groups.add(ChatItem(
+          id: groupId,
+          title: group['name'] as String? ?? 'Grupo Sem Nome',
+          avatarUrl: null,
+          isGroup: true,
+          data: Map<String, dynamic>.from(group as Map),
+        ));
+        processedGroupIds.add(groupId);
+      }
+    }
+
+    // 3. COMBINAÇÃO E ORDENAÇÃO FINAL
+    final allItems = [...profiles, ...groups];
+    allItems
+        .sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
+
+    return allItems;
+  }
+
   void _onSearchChanged() {
-    // Atualiza o estado com o termo de busca em minúsculas
     setState(() {
       _searchTerm = _searchController.text.trim().toLowerCase();
     });
@@ -52,132 +131,125 @@ class _UserListPageState extends State<UserListPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      // 🎯 CORRIGIDO: Removendo o AppBar para eliminar o título duplicado "Contatos".
-      body: Column(
-        children: [
-          // Campo de Pesquisa (UI)
-          Padding(
-            padding: const EdgeInsets.all(12.0),
-            child: TextFormField(
-              controller: _searchController,
-              decoration: InputDecoration(
-                hintText: 'Buscar por nome de usuário...',
-                prefixIcon: const Icon(Icons.search),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(25.0),
-                  borderSide: BorderSide.none,
-                ),
-                filled: true,
-                fillColor: Colors.grey.shade800,
-                contentPadding:
-                    const EdgeInsets.symmetric(vertical: 10, horizontal: 20),
+    // AppBar removido propositalmente (você tem AppBar na HomePage)
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(12.0),
+          child: TextFormField(
+            controller: _searchController,
+            decoration: InputDecoration(
+              hintText: 'Buscar por nome de usuário ou grupo...',
+              prefixIcon: const Icon(Icons.search),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(25.0),
+                borderSide: BorderSide.none,
               ),
+              filled: true,
+              fillColor: Colors.grey.shade800,
+              contentPadding:
+                  const EdgeInsets.symmetric(vertical: 10, horizontal: 20),
             ),
           ),
+        ),
+        Expanded(
+          child: FutureBuilder<List<ChatItem>>(
+            future: _combinedFuture,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
 
-          Expanded(
-            child: StreamBuilder<List<Map<String, dynamic>>>(
-              stream: _profilesStream,
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
+              if (snapshot.hasError) {
+                return Center(
+                    child: Text('Erro ao carregar contatos: ${snapshot.error}',
+                        style: const TextStyle(color: Colors.redAccent)));
+              }
 
-                if (snapshot.hasError) {
-                  return Center(
-                      child: Text(
-                          'Erro ao carregar usuários: ${snapshot.error}',
-                          style: const TextStyle(color: Colors.redAccent)));
-                }
+              final rawItems = snapshot.data ?? [];
 
-                final rawUsers = snapshot.data ?? [];
+              final filteredItems = rawItems.where((item) {
+                final name = item.title.toLowerCase();
+                return name.contains(_searchTerm);
+              }).toList();
 
-                // FILTRAGEM NO CLIENTE: APLICANDO NEQ (usuário logado) e LIKE (pesquisa)
-                final filteredUsers = rawUsers.where((user) {
-                  // 1. Filtro NEQ: Exclui o próprio usuário
-                  if (user['id'] == currentUser!.id) {
-                    return false;
-                  }
+              final items = filteredItems;
 
-                  // 2. Filtro LIKE: Pesquisa por termo digitado
-                  final username =
-                      (user['username'] as String? ?? '').toLowerCase();
-                  return username.contains(_searchTerm);
-                }).toList();
+              if (items.isEmpty) {
+                return Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(30.0),
+                    child: Text(
+                      _searchTerm.isNotEmpty
+                          ? 'Nenhum usuário ou grupo encontrado com o nome "$_searchTerm".'
+                          : 'Nenhum contato ou grupo cadastrado.',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: Colors.grey),
+                    ),
+                  ),
+                );
+              }
 
-                final users =
-                    filteredUsers; // Usamos a lista duplamente filtrada
+              return ListView.builder(
+                itemCount: items.length,
+                itemBuilder: (context, index) {
+                  final item = items[index];
 
-                if (users.isEmpty) {
-                  return Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(30.0),
-                      child: Text(
-                        _searchTerm.isNotEmpty
-                            ? 'Nenhum usuário encontrado com o nome "$_searchTerm".'
-                            : 'Nenhum outro usuário cadastrado foi encontrado. Crie outro usuário para iniciar um DM!',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(color: Colors.grey),
+                  final IconData leadingIcon =
+                      item.isGroup ? Icons.people : Icons.person;
+                  final Color avatarColor = item.isGroup
+                      ? Colors.green.shade700
+                      : Colors.blueGrey.shade700;
+
+                  return Padding(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 0, vertical: 2),
+                    child: ListTile(
+                      tileColor: Colors.transparent,
+                      leading: CircleAvatar(
+                        radius: 28,
+                        backgroundColor: avatarColor,
+                        backgroundImage:
+                            item.avatarUrl != null && item.avatarUrl!.isNotEmpty
+                                ? NetworkImage(item.avatarUrl!)
+                                : null,
+                        child: (item.avatarUrl == null ||
+                                item.avatarUrl!.isEmpty)
+                            ? Icon(leadingIcon, size: 30, color: Colors.white70)
+                            : null,
                       ),
+                      title: Text(item.title,
+                          style: const TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 18)),
+                      subtitle: Text(
+                        item.isGroup
+                            ? 'Grupo'
+                            : 'Toque para iniciar a conversa',
+                        style: TextStyle(
+                            color: item.isGroup
+                                ? Colors.greenAccent
+                                : Colors.grey),
+                      ),
+                      trailing: const Icon(Icons.arrow_forward_ios,
+                          size: 16, color: Colors.grey),
+                      onTap: () {
+                        final Widget targetPage = item.isGroup
+                            ? GroupChatPage(
+                                groupId: item.id, groupName: item.title)
+                            : DirectMessagePage(recipientProfile: item.data);
+
+                        Navigator.of(context).push(
+                          MaterialPageRoute(builder: (context) => targetPage),
+                        );
+                      },
                     ),
                   );
-                }
-
-                return ListView.builder(
-                  itemCount: users.length,
-                  itemBuilder: (context, index) {
-                    final user = users[index];
-                    final String username =
-                        user['username'] as String? ?? 'Usuário Sem Nome';
-                    final String avatarUrl =
-                        user['avatar_url'] as String? ?? '';
-
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 0, vertical: 2),
-                      child: ListTile(
-                        tileColor: Colors.transparent, // Fundo transparente
-                        leading: CircleAvatar(
-                          radius: 28,
-                          backgroundColor: Colors.blueGrey.shade700,
-                          backgroundImage: avatarUrl.isNotEmpty
-                              ? NetworkImage(avatarUrl)
-                              : null,
-                          child: avatarUrl.isEmpty
-                              ? const Icon(Icons.person,
-                                  size: 30, color: Colors.white70)
-                              : null,
-                        ),
-                        title: Text(username,
-                            style: const TextStyle(
-                                fontWeight: FontWeight.bold, fontSize: 18)),
-                        subtitle: const Text(
-                          'Toque para iniciar a conversa',
-                          style: TextStyle(color: Colors.grey),
-                        ),
-                        trailing: const Icon(Icons.arrow_forward_ios,
-                            size: 16, color: Colors.grey),
-                        onTap: () {
-                          // Navega para a tela de mensagem direta
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (context) => DirectMessagePage(
-                                // Passa o perfil do destinatário para a próxima tela
-                                recipientProfile: user,
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    );
-                  },
-                );
-              },
-            ),
+                },
+              );
+            },
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

@@ -33,7 +33,7 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'Whatsapp 2 - Clash Royale',
       theme: ThemeData.dark().copyWith(
-        // Estilo de cores atualizado
+        // Estilo de cores atualizadoc
         colorScheme: ColorScheme.fromSwatch(
           primarySwatch: Colors.green,
           accentColor: Colors.tealAccent[400],

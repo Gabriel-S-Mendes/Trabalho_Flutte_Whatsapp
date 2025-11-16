@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'main.dart'; // se você usa o supabase global
+import 'main.dart'; // Ajuste conforme o caminho do seu arquivo main
 
 class CreateGroupPage extends StatefulWidget {
   const CreateGroupPage({super.key});
@@ -62,20 +62,31 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Grupo criado com sucesso!')),
         );
-        Navigator.of(context).pop(); // volta para a Home
+
+        // CORREÇÃO: Retorna 'true' para sinalizar o recarregamento na UserListPage
+        Navigator.of(context).pop(true);
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erro ao criar grupo: $e')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erro ao criar grupo: $e')),
+        );
+        // Retorna 'false' em caso de erro
+        Navigator.of(context).pop(false);
+      }
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
   }
 
-  // Exemplo simples: busca usuários para seleção (pode mudar pra sua UserListPage)
+  // Exemplo simples: busca usuários para seleção
   Future<List<Map<String, dynamic>>> _fetchUsers() async {
-    final resp = await supabase.from('profiles').select('id, username');
+    final currentUserId = supabase.auth.currentUser!.id;
+    final resp = await supabase
+        .from('profiles')
+        .select('id, username')
+        .neq('id', currentUserId);
+
     return List<Map<String, dynamic>>.from(resp);
   }
 
@@ -101,10 +112,14 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return const Center(child: CircularProgressIndicator());
                   }
-                  final users = snapshot.data ?? [];
-                  if (users.isEmpty) {
-                    return const Center(child: Text('Nenhum usuário encontrado.'));
+                  if (snapshot.hasError) {
+                    return Center(
+                        child: Text(
+                            'Erro ao carregar usuários: ${snapshot.error}'));
                   }
+
+                  final users = snapshot.data ?? [];
+
                   return ListView.builder(
                     itemCount: users.length,
                     itemBuilder: (context, i) {
@@ -112,6 +127,7 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
                       final id = u['id'] as String;
                       final username = u['username'] as String? ?? 'Usuário';
                       final selected = _selectedUserIds.contains(id);
+
                       return CheckboxListTile(
                         value: selected,
                         title: Text(username),
