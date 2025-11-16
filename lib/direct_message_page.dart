@@ -101,7 +101,7 @@ class _DirectMessagePageState extends State<DirectMessagePage> {
     recipientId = widget.recipientProfile['id'] as String;
     _scrollController = ScrollController();
 
-    // 🎯 CORRIGIDO: Nome da tabela de 'direct_messages' para 'messages'
+    // Tabela corrigida anteriormente (de 'direct_messages' para 'messages')
     _messagesStream = supabase
         .from('messages')
         .stream(primaryKey: ['id']).order('created_at', ascending: true);
@@ -116,7 +116,7 @@ class _DirectMessagePageState extends State<DirectMessagePage> {
     _textController.clear();
 
     try {
-      // 🎯 CORRIGIDO: Nome da tabela de 'direct_messages' para 'messages'
+      // Tabela corrigida anteriormente (de 'direct_messages' para 'messages')
       await supabase.from('messages').insert({
         'sender_id': currentUserId,
         'recipient_id': recipientId,
@@ -188,8 +188,10 @@ class _DirectMessagePageState extends State<DirectMessagePage> {
                 // ✅ Filtra no cliente apenas mensagens entre os dois usuários
                 final raw = snapshot.data ?? [];
                 final messages = raw.where((m) {
-                  final s = m['sender_id'] as String?;
-                  final r = m['recipient_id'] as String?;
+                  // 🎯 CORRIGIDO: Usando .toString() para garantir a comparação correta de IDs (UUIDs)
+                  final s = m['sender_id']?.toString();
+                  final r = m['recipient_id']?.toString();
+
                   return (s == currentUserId && r == recipientId) ||
                       (s == recipientId && r == currentUserId);
                 }).toList();
