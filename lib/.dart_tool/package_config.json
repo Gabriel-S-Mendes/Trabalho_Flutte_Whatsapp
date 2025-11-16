@@ -189,9 +189,9 @@
     },
     {
       "name": "file_picker",
-      "rootUri": "file:///C:/Users/Matheusb.dev/AppData/Local/Pub/Cache/hosted/pub.dev/file_picker-5.5.0",
+      "rootUri": "file:///C:/Users/Matheusb.dev/AppData/Local/Pub/Cache/hosted/pub.dev/file_picker-6.2.1",
       "packageUri": "lib/",
-      "languageVersion": "2.17"
+      "languageVersion": "2.19"
     },
     {
       "name": "file_selector_linux",
@@ -243,7 +243,7 @@
     },
     {
       "name": "flutter_lints",
-      "rootUri": "file:///C:/Users/Matheusb.dev/AppData/Local/Pub/Cache/hosted/pub.dev/flutter_lints-3.0.2",
+      "rootUri": "file:///C:/Users/Matheusb.dev/AppData/Local/Pub/Cache/hosted/pub.dev/flutter_lints-4.0.0",
       "packageUri": "lib/",
       "languageVersion": "3.1"
     },
@@ -411,9 +411,9 @@
     },
     {
       "name": "lints",
-      "rootUri": "file:///C:/Users/Matheusb.dev/AppData/Local/Pub/Cache/hosted/pub.dev/lints-3.0.0",
+      "rootUri": "file:///C:/Users/Matheusb.dev/AppData/Local/Pub/Cache/hosted/pub.dev/lints-4.0.0",
       "packageUri": "lib/",
-      "languageVersion": "3.0"
+      "languageVersion": "3.1"
     },
     {
       "name": "logging",

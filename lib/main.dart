@@ -1,80 +1,44 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'config/supabase_config.dart';
-import 'screens/auth/splash_screen.dart';
-import 'screens/auth/login_screen.dart';
+import 'package:supabase_flutter/supabase_flutter.dart'; // <-- Este import será usado agora
+import 'package:flutter_dotenv/flutter_dotenv.dart';   // <-- Novo import
+import 'splash_page.dart'; // (Ou sua página inicial)
 
-void main() async {
+Future<void> main() async {
+  // Garante que o Flutter está inicializado
   WidgetsFlutterBinding.ensureInitialized();
-  
-  try {
-    // Carregar .env
-    await dotenv.load();
-    
-    // Inicializar Supabase
-    await SupabaseConfig.initialize();
-    
-    runApp(const MyApp());
-  } catch (e) {
-    runApp(
-      MaterialApp(
-        home: Scaffold(
-          body: Center(
-            child: Text('Erro ao inicializar: $e'),
-          ),
-        ),
-      ),
-    );
-  }
+
+  // Carrega as variáveis de ambiente do arquivo .env
+  await dotenv.load(fileName: ".env");
+
+  // Inicializa o Supabase com as chaves carregadas
+  await Supabase.initialize(
+    // Acessa as variáveis carregadas do .env
+    url: dotenv.env['SUPABASE_URL']!, 
+    anonKey: dotenv.env['SUPABASE_ANON_KEY']!,
+  );
+
+  runApp(MyApp());
 }
 
-class MyApp extends StatefulWidget {
-  const MyApp({Key? key}) : super(key: key);
+// Helper global para acessar o cliente Supabase
+final supabase = Supabase.instance.client;
 
-  @override
-  State<MyApp> createState() => _MyAppState();
-}
-
-class _MyAppState extends State<MyApp> {
-  bool _isAuthenticated = false;
-  bool _isLoading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _checkAuthStatus();
-  }
-
-  void _checkAuthStatus() {
-    setState(() {
-      _isAuthenticated = SupabaseConfig.isAuthenticated;
-      _isLoading = false;
-    });
-  }
-
-  void _handleAuthStateChanged(bool isAuthenticated) {
-    setState(() {
-      _isAuthenticated = isAuthenticated;
-    });
-  }
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Chat App',
-      theme: ThemeData(
-        primarySwatch: Colors.blue,
-        useMaterial3: true,
+      title: 'Supabase Login Demo',
+      theme: ThemeData.dark().copyWith(
+        primaryColor: Colors.green,
+        elevatedButtonTheme: ElevatedButtonThemeData(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.green,
+          ),
+        ),
       ),
-      home: _isLoading
-          ? SplashScreen(onAuthStateChanged: _handleAuthStateChanged)
-          : (_isAuthenticated
-              ? const Scaffold(
-                  body: Center(
-                    child: Text('Home Screen - Em desenvolvimento'),
-                  ),
-                )
-              : LoginScreen(onLoginSuccess: _handleAuthStateChanged)),
+      home: SplashPage(), // Começamos pela Splash Page
     );
   }
 }

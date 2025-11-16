@@ -5,43 +5,49 @@ publish_to: 'none'
 version: 1.0.0+1
 
 environment:
-  sdk: ^3.0.0
+  # Ampliamos a restrição do SDK para ser mais flexível
+  sdk: '>=3.0.0 <4.0.0'
 
 dependencies:
   flutter:
     sdk: flutter
 
   # Supabase & Backend
-  supabase_flutter: ^2.8.0
+  # Versão atualizada para as últimas correções e features
+  supabase_flutter: 2.10.3 
   flutter_dotenv: ^5.1.0
 
   # State Management
-  provider: ^6.0.0
+  provider: ^6.1.2
 
   # UI & Navigation
-  cupertino_icons: ^1.0.2
+  cupertino_icons: ^1.0.8
 
   # File & Image Handling
-  image_picker: ^1.0.0
-  file_picker: ^5.3.0
-  cached_network_image: ^3.3.0
+  image_picker: ^1.1.2
+  file_picker: ^6.2.0
+  cached_network_image: ^3.3.1
 
   # Utilities
-  uuid: ^4.0.0
+  uuid: ^4.4.0
   intl: ^0.19.0
-  http: ^1.1.0
+  http: ^1.2.1
 
   # JSON Serialization
-  json_annotation: ^4.8.0
+  json_annotation: ^4.9.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^3.0.0
-  build_runner: ^2.4.0
-  json_serializable: ^6.7.0
+  
+  # Lints atualizados para melhores práticas de código
+  flutter_lints: ^4.0.0 
+  
+  # Build runners atualizados
+  build_runner: ^2.4.9
+  json_serializable: ^6.8.0
 
-flutter:
+flutter: 
   uses-material-design: true
 
   assets:
