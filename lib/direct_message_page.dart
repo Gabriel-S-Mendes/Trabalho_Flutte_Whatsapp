@@ -101,9 +101,9 @@ class _DirectMessagePageState extends State<DirectMessagePage> {
     recipientId = widget.recipientProfile['id'] as String;
     _scrollController = ScrollController();
 
-    // ✅ Pega todas as mensagens e filtra no cliente
+    // 🎯 CORRIGIDO: Nome da tabela de 'direct_messages' para 'messages'
     _messagesStream = supabase
-        .from('direct_messages')
+        .from('messages')
         .stream(primaryKey: ['id']).order('created_at', ascending: true);
   }
 
@@ -116,7 +116,8 @@ class _DirectMessagePageState extends State<DirectMessagePage> {
     _textController.clear();
 
     try {
-      await supabase.from('direct_messages').insert({
+      // 🎯 CORRIGIDO: Nome da tabela de 'direct_messages' para 'messages'
+      await supabase.from('messages').insert({
         'sender_id': currentUserId,
         'recipient_id': recipientId,
         'content': text,
