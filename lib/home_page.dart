@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
 import 'login_page.dart';
 import 'main.dart';
-import 'user_list_page.dart'; // Importa a tela para listar os usuários (contatos)
+import 'user_list_page.dart';
+import 'create_group_page.dart'; // <-- Import da nova tela de criação de grupos
 
-// Convertido para StatelessWidget, pois o estado (StatefulWidget) não é mais necessário
-// nesta tela, que agora só hospeda a UserListPage.
 class HomePage extends StatelessWidget {
   const HomePage({super.key});
 
@@ -13,9 +13,7 @@ class HomePage extends StatelessWidget {
   Future<void> _signOut(BuildContext context) async {
     await supabase.auth.signOut();
 
-    // Verifica se o Widget ainda está montado antes de navegar
     if (context.mounted) {
-      // Retorna para a tela de login
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (context) => const LoginPage()),
       );
@@ -28,20 +26,32 @@ class HomePage extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        // Título alterado para refletir o novo conteúdo da tela
         title: const Text('Contatos do Chat'),
         actions: [
-          // O botão de contatos foi removido, pois a lista agora é o corpo da tela.
+          // 👉 Botão para criar grupo (NOVO)
+          IconButton(
+            icon: const Icon(Icons.group_add),
+            tooltip: 'Criar Grupo',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const CreateGroupPage(),
+                ),
+              );
+            },
+          ),
+
+          // Botão de logout
           IconButton(
             icon: const Icon(Icons.logout),
             tooltip: 'Sair (Logado como: $userEmail)',
-            // Chama a função _signOut passando o contexto
             onPressed: () => _signOut(context),
-          )
+          ),
         ],
       ),
 
-      // MODIFICAÇÃO PRINCIPAL: Substitui o conteúdo estático pela UserListPage
+      // A página de contatos permanece como corpo
       body: const UserListPage(),
     );
   }
