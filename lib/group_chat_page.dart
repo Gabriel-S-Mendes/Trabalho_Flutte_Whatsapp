@@ -92,17 +92,11 @@ class _GroupChatPageState extends State<GroupChatPage> {
     setState(() => _isSending = true);
 
     try {
-      // Upload da imagem no Storage
-      await supabase.storage.from('chat-images').uploadBinary(
-            fileName,
-            fileBytes,
-      );
+      await supabase.storage.from('chat-images').uploadBinary(fileName, fileBytes);
 
-      // Gera URL pública
       final String imageUrl =
           supabase.storage.from('chat-images').getPublicUrl(fileName);
 
-      // Envia a mensagem com a URL da imagem
       await supabase.from('group_messages').insert({
         'group_id': widget.groupId,
         'sender_id': userId,
@@ -136,12 +130,65 @@ class _GroupChatPageState extends State<GroupChatPage> {
     );
   }
 
+  // Função para mostrar integrantes do grupo
+  Future<void> _showGroupMembers() async {
+    try {
+      final List members = await supabase
+          .from('group_members')
+          .select('user_id')
+          .eq('group_id', widget.groupId);
+
+      final List<String> memberNames = [];
+      for (var m in members) {
+        final username = _usernames[m['user_id']] ?? 'Desconhecido';
+        memberNames.add(username);
+      }
+
+      if (!mounted) return;
+
+      showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('Integrantes do grupo'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: memberNames.length,
+              itemBuilder: (_, index) => ListTile(
+                leading: const Icon(Icons.person),
+                title: Text(memberNames[index]),
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Fechar'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      _showSnackBar('Erro ao carregar membros: $e');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final myId = supabase.auth.currentUser?.id ?? '';
 
     return Scaffold(
-      appBar: AppBar(title: Text(widget.groupName)),
+      appBar: AppBar(
+        title: Text(widget.groupName),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.group),
+            onPressed: _showGroupMembers,
+            tooltip: 'Ver integrantes',
+          ),
+        ],
+      ),
       body: Column(
         children: [
           Expanded(
