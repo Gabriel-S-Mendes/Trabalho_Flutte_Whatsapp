@@ -4,9 +4,7 @@ import 'login_page.dart';
 import 'main.dart';
 import 'user_list_page.dart'; // Contém a definição de UserListPage e UserListPageState
 import 'create_group_page.dart';
-
-// 🚨 ATENÇÃO: O widget UserListPageState deve ser importado
-// ou definido no user_list_page.dart sem o underscore, como corrigido acima.
+import 'profile_page.dart'; // 👈 NOVA IMPORTAÇÃO para a tela de perfil
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -16,16 +14,13 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  // 🚀 CORREÇÃO 1: Usamos o nome de estado público (UserListPageState)
+  // 🚀 Usamos o nome de estado público (UserListPageState)
   final GlobalKey<UserListPageState> _userListKey =
       GlobalKey<UserListPageState>();
 
-  // Função de Logout CORRIGIDA
+  // Função de Logout (Contém a lógica de setar Offline)
   Future<void> _signOut() async {
     // 1. CHAMA O MÉTODO PARA MUDAR O STATUS PARA OFFLINE (FALSE)
-    // Usamos a GlobalKey para acessar o método que está na lista de usuários.
-    // O 'await' aqui é crucial para garantir que o comando chegue ao Supabase.
-    // Usamos ?. para verificar se o estado está pronto (currentState não é nulo).
     await _userListKey.currentState?.updateOnlineStatus(false);
 
     // 2. DESLOGA O USUÁRIO DA SESSÃO SUPABASE
@@ -47,7 +42,7 @@ class _HomePageState extends State<HomePage> {
     );
 
     if (shouldRefresh == true) {
-      // 🚀 CORREÇÃO 2: Chamamos a função pública loadData()
+      // 🚀 Chamamos a função pública loadData()
       _userListKey.currentState?.loadData();
     }
   }
@@ -60,15 +55,32 @@ class _HomePageState extends State<HomePage> {
       appBar: AppBar(
         title: const Text('Contatos e Grupos'),
         actions: [
+          // 🎯 BOTÃO DE PERFIL (CORRIGIDO)
+          IconButton(
+            icon: const Icon(Icons.person),
+            tooltip: 'Meu Perfil',
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (context) => ProfilePage(
+                    // Passando o callback obrigatório
+                    onSignOut: _signOut,
+                  ),
+                ),
+              );
+            },
+          ),
+
           IconButton(
             icon: const Icon(Icons.group_add),
             tooltip: 'Criar Grupo',
             onPressed: _navigateToCreateGroup,
           ),
+
           IconButton(
             icon: const Icon(Icons.logout),
             tooltip: 'Sair (Logado como: $userEmail)',
-            onPressed: _signOut, // Chama a função _signOut CORRIGIDA
+            onPressed: _signOut,
           ),
         ],
       ),
