@@ -1,17 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
-import 'dart:io';
 
 import 'main.dart';
-// Não precisamos do import 'login_page.dart' aqui, pois a função onSignOut
-// (que vem da HomePage) já cuida da navegação.
+// A importação de 'dart:io' foi removida para garantir a compatibilidade com a Web.
 
 // ----------------------------------------------------------
 // 👤 TELA PRINCIPAL DE PERFIL
 // ----------------------------------------------------------
 class ProfilePage extends StatefulWidget {
-  // 🚨 NOVO: Recebe o callback da função de deslogar da HomePage
+  // Recebe o callback da função de deslogar da HomePage
   final Future<void> Function() onSignOut;
 
   const ProfilePage({super.key, required this.onSignOut});
@@ -106,7 +104,7 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   // ----------------------------------------------------------
-  // 🖼️ FUNÇÃO: ENVIAR AVATAR
+  // 🖼️ FUNÇÃO: ENVIAR AVATAR (COMPATÍVEL COM WEB)
   // ----------------------------------------------------------
   Future<void> _uploadAvatar() async {
     if (currentUser == null || _isLoading) return;
@@ -123,17 +121,20 @@ class _ProfilePageState extends State<ProfilePage> {
     setState(() => _isLoading = true);
 
     try {
-      final file = File(pickedFile.path);
-      final fileExtension = pickedFile.path.split('.').last;
+      // 💡 CORREÇÃO WEB: LER O ARQUIVO COMO BYTES
+      final bytes = await pickedFile.readAsBytes();
+      final fileExtension = pickedFile.name.split('.').last;
+      final mimeType = pickedFile.mimeType ?? 'image/jpeg';
+
       final fileName =
           '${currentUser!.id}/${DateTime.now().millisecondsSinceEpoch}.$fileExtension';
 
-      // 1. UPLOAD para o Storage
-      await supabase.storage.from('avatars').upload(
+      // 1. UPLOAD para o Storage (Usando uploadBinary para bytes)
+      await supabase.storage.from('avatars').uploadBinary(
             fileName,
-            file,
-            fileOptions: const FileOptions(
-              contentType: 'image/jpeg',
+            bytes,
+            fileOptions: FileOptions(
+              contentType: mimeType,
               upsert: true,
             ),
           );
@@ -160,11 +161,9 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   // ----------------------------------------------------------
-  // 🚪 FUNÇÃO: DESLOGAR (CHAMA O CALLBACK DA HOMEPAGE)
+  // 🚪 FUNÇÃO: DESLOGAR
   // ----------------------------------------------------------
   Future<void> _signOut() async {
-    // 🚨 CORREÇÃO: Chama a função que veio da HomePage, que contém a
-    // lógica de setar o status Offline e navegar para a LoginPage.
     await widget.onSignOut();
   }
 
@@ -178,7 +177,7 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   // ----------------------------------------------------------
-  // 🖥️ INTERFACE
+  // 🖥️ INTERFACE (Com correção para exibição da imagem)
   // ----------------------------------------------------------
   @override
   Widget build(BuildContext context) {
@@ -207,24 +206,54 @@ class _ProfilePageState extends State<ProfilePage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Imagem de Perfil (Avatar)
+            // Imagem de Perfil (Avatar) - CORRIGIDO PARA EXIBIÇÃO
             GestureDetector(
               onTap: _uploadAvatar,
               child: Center(
                 child: Stack(
                   children: [
+                    // O Avatar base (fundo cinza e ícone fallback)
                     CircleAvatar(
                       radius: 60,
                       backgroundColor: Colors.grey.shade700,
-                      backgroundImage:
-                          (avatarUrl != null && avatarUrl.isNotEmpty)
-                              ? NetworkImage(avatarUrl)
-                              : null,
                       child: (avatarUrl == null || avatarUrl.isEmpty)
                           ? const Icon(Icons.person,
                               size: 60, color: Colors.white70)
                           : null,
                     ),
+
+                    // O Avatar com a Imagem de Rede (carregado)
+                    if (avatarUrl != null && avatarUrl.isNotEmpty)
+                      ClipOval(
+                        // Garante que a imagem carregada seja circular
+                        child: Image.network(
+                          avatarUrl,
+                          width: 120, // 2 * radius
+                          height: 120, // 2 * radius
+                          fit: BoxFit.cover,
+                          // Adiciona um indicador de carregamento
+                          loadingBuilder: (context, child, loadingProgress) {
+                            if (loadingProgress == null) return child;
+                            return const SizedBox(
+                              width: 120,
+                              height: 120,
+                              child: Center(
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            );
+                          },
+                          // Loga o erro se a imagem não carregar (útil para diagnosticar RLS)
+                          errorBuilder: (context, error, stackTrace) {
+                            print('Erro ao carregar avatar: $error');
+                            return const SizedBox(width: 120, height: 120);
+                          },
+                        ),
+                      ),
+
+                    // O ícone de câmera (Posicionamento)
                     const Positioned(
                       bottom: 0,
                       right: 0,
