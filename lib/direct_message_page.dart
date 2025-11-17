@@ -1,25 +1,24 @@
 import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'main.dart';
 
-// ----------------------------------------------------------
-// 🟦 WIDGET DE BOLHA DE MENSAGEM (TEXTO + IMAGEM)
-// ----------------------------------------------------------
+// 🎯 Widget de Exibição de Mensagem Individual
 class ChatBubble extends StatelessWidget {
   const ChatBubble({
     super.key,
     required this.message,
-    required this.imageUrl,
     required this.isCurrentUser,
     required this.sentAt,
+    this.imageUrl,
   });
 
   final String? message;
-  final String? imageUrl;
   final bool isCurrentUser;
   final DateTime sentAt;
+  final String? imageUrl;
 
   @override
   Widget build(BuildContext context) {
@@ -41,35 +40,28 @@ class ChatBubble extends StatelessWidget {
               borderRadius: BorderRadius.only(
                 topLeft: const Radius.circular(16),
                 topRight: const Radius.circular(16),
-                bottomLeft:
-                    isCurrentUser ? const Radius.circular(16) : const Radius.circular(2),
-                bottomRight:
-                    isCurrentUser ? const Radius.circular(2) : const Radius.circular(16),
+                bottomLeft: isCurrentUser
+                    ? const Radius.circular(16)
+                    : const Radius.circular(2),
+                bottomRight: isCurrentUser
+                    ? const Radius.circular(2)
+                    : const Radius.circular(16),
               ),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (imageUrl != null)
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(10),
-                    child: Image.network(
-                      imageUrl!,
-                      fit: BoxFit.cover,
-                    ),
-                  ),
                 if (message != null)
-                  Text(
-                    message!,
-                    style: const TextStyle(color: Colors.white),
-                  ),
+                  Text(message!, style: const TextStyle(color: Colors.white)),
+                if (imageUrl != null) ...[
+                  const SizedBox(height: 4),
+                  Image.network(imageUrl!),
+                ],
                 const SizedBox(height: 4),
                 Text(
-                  "${sentAt.day.toString().padLeft(2, '0')}/${sentAt.month.toString().padLeft(2, '0')} "
-                  "${sentAt.hour.toString().padLeft(2, '0')}:${sentAt.minute.toString().padLeft(2, '0')}",
+                  "${sentAt.day.toString().padLeft(2, '0')}/${sentAt.month.toString().padLeft(2, '0')} ${sentAt.hour.toString().padLeft(2, '0')}:${sentAt.minute.toString().padLeft(2, '0')}",
                   style: TextStyle(
-                    color:
-                        isCurrentUser ? Colors.white70 : Colors.grey.shade300,
+                    color: isCurrentUser ? Colors.white70 : Colors.grey.shade300,
                     fontSize: 10,
                   ),
                 ),
@@ -82,9 +74,7 @@ class ChatBubble extends StatelessWidget {
   }
 }
 
-// ----------------------------------------------------------
-// 🔵 TELA DE MENSAGENS DIRETAS
-// ----------------------------------------------------------
+// 💬 Tela Principal de Mensagem Direta
 class DirectMessagePage extends StatefulWidget {
   const DirectMessagePage({
     super.key,
@@ -99,42 +89,36 @@ class DirectMessagePage extends StatefulWidget {
 
 class _DirectMessagePageState extends State<DirectMessagePage> {
   late final Stream<List<Map<String, dynamic>>> _messagesStream;
-
   final TextEditingController _textController = TextEditingController();
   final User? currentUser = supabase.auth.currentUser;
-
   late final ScrollController _scrollController;
-
   late final String currentUserId;
   late final String recipientId;
-
   bool _isSending = false;
 
   @override
   void initState() {
     super.initState();
 
+    if (currentUser == null) return;
+
     currentUserId = currentUser!.id;
     recipientId = widget.recipientProfile['id'] as String;
-
     _scrollController = ScrollController();
 
-    // STREAM: recebe apenas mensagens onde o usuário é o sender
+    // 🔹 Stream de mensagens de TODOS, filtrado localmente
     _messagesStream = supabase
         .from('messages')
         .stream(primaryKey: ['id'])
-        .eq('sender_id', currentUserId)
         .order('created_at', ascending: true);
   }
 
-  // ----------------------------------------------------------
-  // ✉ ENVIO DE TEXTO
-  // ----------------------------------------------------------
   Future<void> _sendMessage() async {
-    final text = _textController.text.trim();
-    if (text.isEmpty || _isSending) return;
+    if (_textController.text.trim().isEmpty || _isSending) return;
 
     setState(() => _isSending = true);
+
+    final text = _textController.text.trim();
     _textController.clear();
 
     try {
@@ -145,45 +129,37 @@ class _DirectMessagePageState extends State<DirectMessagePage> {
         'image_url': null,
       });
 
-      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+      _scrollToBottom();
+    } on PostgrestException catch (e) {
+      if (mounted) _showSnackBar(context, 'Erro ao enviar mensagem: ${e.message}');
     } finally {
       if (mounted) setState(() => _isSending = false);
     }
   }
 
-  // ----------------------------------------------------------
-  // 🖼 ENVIO DE IMAGEM (WEB + MOBILE + DESKTOP)
-  // ----------------------------------------------------------
   Future<void> _sendImage() async {
     final picker = ImagePicker();
-
     final XFile? picked =
-        await picker.pickImage(source: ImageSource.gallery, imageQuality: 80);
+        await picker.pickImage(source: ImageSource.gallery, imageQuality: 70);
 
     if (picked == null) return;
 
-    final fileName =
-        "${DateTime.now().millisecondsSinceEpoch}_${currentUserId}.jpg";
+    final Uint8List fileBytes = await picked.readAsBytes();
+    final String fileName = "${DateTime.now().millisecondsSinceEpoch}.jpg";
+
+    setState(() => _isSending = true);
 
     try {
-      // Carregar bytes (compatível com qualquer plataforma)
-      Uint8List bytes = await picked.readAsBytes();
-
-      // Enviar para o Supabase Storage
+      // Upload da imagem
       await supabase.storage.from('chat-images').uploadBinary(
             fileName,
-            bytes,
-            fileOptions: const FileOptions(
-              contentType: 'image/jpeg',
-              upsert: false,
-            ),
+            fileBytes,
+            fileOptions: const FileOptions(contentType: 'image/jpeg', upsert: false),
           );
 
-      // Obter URL pública
-      final imageUrl =
+      final String imageUrl =
           supabase.storage.from('chat-images').getPublicUrl(fileName);
 
-      // Inserir mensagem com imagem
       await supabase.from('messages').insert({
         'sender_id': currentUserId,
         'recipient_id': recipientId,
@@ -194,20 +170,21 @@ class _DirectMessagePageState extends State<DirectMessagePage> {
       _scrollToBottom();
     } catch (e) {
       _showSnackBar(context, "Erro ao enviar imagem: $e");
+    } finally {
+      if (mounted) setState(() => _isSending = false);
     }
   }
 
-  // ----------------------------------------------------------
-  // 🔽 SCROLL PARA BAIXO
-  // ----------------------------------------------------------
   void _scrollToBottom() {
-    if (!_scrollController.hasClients) return;
-
-    _scrollController.animateTo(
-      _scrollController.position.maxScrollExtent,
-      duration: const Duration(milliseconds: 250),
-      curve: Curves.easeOut,
-    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    });
   }
 
   void _showSnackBar(BuildContext context, String message) {
@@ -216,94 +193,127 @@ class _DirectMessagePageState extends State<DirectMessagePage> {
     );
   }
 
-  // ----------------------------------------------------------
-  // 🖥 INTERFACE
-  // ----------------------------------------------------------
+  @override
+  void dispose() {
+    _textController.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
-    final username =
-        widget.recipientProfile['username'] ?? "Usuário Desconhecido";
+    final recipientUsername =
+        widget.recipientProfile['username'] as String? ?? 'Usuário Desconhecido';
+    final recipientOnline = widget.recipientProfile['is_online'] as bool? ?? false;
 
     return Scaffold(
-      appBar: AppBar(title: Text(username)),
+      appBar: AppBar(
+        title: Row(
+          children: [
+            Text(recipientUsername),
+            const SizedBox(width: 8),
+            CircleAvatar(
+              radius: 6,
+              backgroundColor: recipientOnline ? Colors.green : Colors.grey,
+            ),
+          ],
+        ),
+        backgroundColor: Theme.of(context).appBarTheme.backgroundColor,
+        elevation: 1,
+      ),
       body: Column(
         children: [
-          // ---------------- MENSAGENS ----------------
           Expanded(
             child: StreamBuilder<List<Map<String, dynamic>>>(
               stream: _messagesStream,
               builder: (context, snapshot) {
-                final rawMessages = snapshot.data ?? [];
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
 
-                // Filtrar mensagens de ambos os lados
-                final messages = rawMessages.where((m) {
-                  final s = m['sender_id'];
-                  final r = m['recipient_id'];
+                if (snapshot.hasError) {
+                  return Center(
+                    child: Text(
+                      'Erro de conexão: ${snapshot.error}',
+                      style: const TextStyle(color: Colors.redAccent),
+                    ),
+                  );
+                }
 
+                final raw = snapshot.data ?? [];
+                final messages = raw.where((m) {
+                  final s = m['sender_id']?.toString();
+                  final r = m['recipient_id']?.toString();
                   return (s == currentUserId && r == recipientId) ||
                       (s == recipientId && r == currentUserId);
                 }).toList();
 
-                WidgetsBinding.instance
-                    .addPostFrameCallback((_) => _scrollToBottom());
+                _scrollToBottom();
+
+                if (messages.isEmpty) {
+                  return Center(
+                    child: Text('Inicie uma conversa com $recipientUsername!'),
+                  );
+                }
 
                 return ListView.builder(
                   controller: _scrollController,
                   itemCount: messages.length,
                   itemBuilder: (context, index) {
-                    final m = messages[index];
-                    final isMe = m['sender_id'] == currentUserId;
+                    final messageData = messages[index];
+                    final content = messageData['content'] as String?;
+                    final senderId = messageData['sender_id'] as String;
+                    final sentAt = DateTime.parse(messageData['created_at'] as String);
+                    final imageUrl = messageData['image_url'] as String?;
+                    final isCurrentUserMessage = senderId == currentUserId;
 
                     return ChatBubble(
-                      message: m['content'],
-                      imageUrl: m['image_url'],
-                      isCurrentUser: isMe,
-                      sentAt: DateTime.parse(m['created_at']).toLocal(),
+                      message: content,
+                      isCurrentUser: isCurrentUserMessage,
+                      sentAt: sentAt.toLocal(),
+                      imageUrl: imageUrl,
                     );
                   },
                 );
               },
             ),
           ),
-
-          // ---------------- CAMPO DE ENVIO ----------------
           Padding(
             padding: const EdgeInsets.all(8.0),
             child: Row(
               children: [
-                // Botão de enviar imagem
                 IconButton(
-                  onPressed: _sendImage,
-                  icon: const Icon(Icons.image, color: Colors.white),
+                  onPressed: _isSending ? null : _sendImage,
+                  icon: const Icon(Icons.image),
+                  tooltip: 'Enviar imagem',
                 ),
-                const SizedBox(width: 8),
-
-                // Campo de texto
                 Expanded(
                   child: TextFormField(
                     controller: _textController,
                     decoration: InputDecoration(
-                      hintText: "Digite sua mensagem...",
-                      filled: true,
-                      fillColor: Colors.grey.shade800,
+                      hintText: 'Digite sua mensagem...',
                       border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(25),
+                        borderRadius: BorderRadius.circular(25.0),
                         borderSide: BorderSide.none,
                       ),
+                      filled: true,
+                      fillColor: Colors.grey.shade800,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 10,
+                      ),
                     ),
+                    maxLines: null,
                   ),
                 ),
                 const SizedBox(width: 8),
-
-                // Botão de enviar texto
                 IconButton(
                   onPressed: _isSending ? null : _sendMessage,
                   icon: Icon(
                     Icons.send,
-                    color: _isSending
-                        ? Colors.grey
-                        : Theme.of(context).primaryColor,
+                    color: _isSending ? Colors.grey : Theme.of(context).primaryColor,
                   ),
+                  tooltip: 'Enviar Mensagem',
                 ),
               ],
             ),
