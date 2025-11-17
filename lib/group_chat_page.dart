@@ -1,7 +1,8 @@
-import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'main.dart'; // Certifique-se de que supabase está inicializado aqui
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'main.dart';
 
 class GroupChatPage extends StatefulWidget {
   final String groupId;
@@ -21,16 +22,16 @@ class _GroupChatPageState extends State<GroupChatPage> {
   final _messageController = TextEditingController();
   late final Stream<List<Map<String, dynamic>>> _messagesStream;
 
-  // Cache simples de usernames
   final Map<String, String> _usernames = {};
-  final Map<String, List<String>> _reactions = {}; // messageId -> lista de emojis
+  final Map<String, List<String>> _reactions = {};
   final ImagePicker _picker = ImagePicker();
+
+  bool _isSending = false;
 
   @override
   void initState() {
     super.initState();
 
-    // Escuta mensagens em tempo real do grupo
     _messagesStream = supabase
         .from('group_messages')
         .stream(primaryKey: ['id'])
@@ -72,21 +73,36 @@ class _GroupChatPageState extends State<GroupChatPage> {
     }
   }
 
+  // 🔥 NOVO MÉTODO — IGUAL AO DO DIRECT MESSAGE PAGE
   Future<void> _pickAndSendImage() async {
-    final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
-    if (image == null) return;
+    final XFile? picked =
+        await _picker.pickImage(source: ImageSource.gallery, imageQuality: 70);
 
-    final file = File(image.path);
-    final fileName = '${DateTime.now().millisecondsSinceEpoch}_${image.name}';
+    if (picked == null) return;
+
+    final Uint8List fileBytes = await picked.readAsBytes();
+    final String fileName = "${DateTime.now().millisecondsSinceEpoch}.jpg";
+
+    setState(() => _isSending = true);
 
     try {
-      await supabase.storage.from('chat-images').upload(fileName, file);
-      final imageUrl = supabase.storage.from('chat-images').getPublicUrl(fileName);
+      await supabase.storage.from('chat-images').uploadBinary(
+            fileName,
+            fileBytes,
+            fileOptions:
+                const FileOptions(contentType: 'image/jpeg', upsert: false),
+          );
 
-      _sendMessage(imageUrl: imageUrl);
+      final String imageUrl =
+          supabase.storage.from('chat-images').getPublicUrl(fileName);
+
+      await _sendMessage(imageUrl: imageUrl);
+
     } catch (e) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Erro ao enviar imagem: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Erro ao enviar imagem: $e")));
+    } finally {
+      if (mounted) setState(() => _isSending = false);
     }
   }
 
@@ -98,7 +114,6 @@ class _GroupChatPageState extends State<GroupChatPage> {
       _reactions[messageId] = reactionsList;
     });
 
-    // Salvar no Supabase (em grupo_reactions)
     try {
       await supabase.from('group_reactions').insert({
         'message_id': messageId,
@@ -122,10 +137,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
           children: emojis
               .map((e) => GestureDetector(
                     onTap: () => Navigator.pop(context, e),
-                    child: Text(
-                      e,
-                      style: const TextStyle(fontSize: 30),
-                    ),
+                    child: Text(e, style: const TextStyle(fontSize: 30)),
                   ))
               .toList(),
         ),
@@ -135,28 +147,6 @@ class _GroupChatPageState extends State<GroupChatPage> {
     if (emoji != null) _addReaction(messageId, emoji);
   }
 
-  Future<void> _showGroupMembers() async {
-    final members = await supabase
-        .from('group_members')
-        .select('user_id, profiles(username)')
-        .eq('group_id', widget.groupId);
-
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Membros do grupo'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: (members as List)
-              .map((m) => ListTile(
-                    title: Text(m['profiles']['username'] ?? 'Desconhecido'),
-                  ))
-              .toList(),
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final myId = supabase.auth.currentUser?.id ?? '';
@@ -164,29 +154,26 @@ class _GroupChatPageState extends State<GroupChatPage> {
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.groupName),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.people),
-            onPressed: _showGroupMembers,
-          ),
-        ],
       ),
       body: Column(
         children: [
-          // Lista de mensagens
           Expanded(
             child: StreamBuilder<List<Map<String, dynamic>>>(
               stream: _messagesStream,
               builder: (context, snapshot) {
-                if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+                if (!snapshot.hasData)
+                  return const Center(child: CircularProgressIndicator());
+
                 final messages = snapshot.data!;
+
                 return ListView.builder(
                   reverse: true,
                   itemCount: messages.length,
                   itemBuilder: (context, index) {
                     final msg = messages[messages.length - 1 - index];
                     final isMe = msg['sender_id'] == myId;
-                    final username = _usernames[msg['sender_id']] ?? 'Carregando...';
+                    final username =
+                        _usernames[msg['sender_id']] ?? 'Carregando...';
                     final messageId = msg['id'].toString();
 
                     return GestureDetector(
@@ -215,20 +202,22 @@ class _GroupChatPageState extends State<GroupChatPage> {
             child: Row(
               children: [
                 IconButton(
-                  icon: const Icon(Icons.image, color: Colors.green),
-                  onPressed: _pickAndSendImage,
+                  icon: Icon(Icons.image,
+                      color: _isSending ? Colors.grey : Colors.green),
+                  onPressed: _isSending ? null : _pickAndSendImage,
                 ),
                 Expanded(
                   child: TextField(
                     controller: _messageController,
-                    decoration:
-                        const InputDecoration.collapsed(hintText: 'Mensagem...'),
+                    decoration: const InputDecoration.collapsed(
+                        hintText: 'Mensagem...'),
                     onSubmitted: (_) => _sendMessage(),
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.send, color: Colors.green),
-                  onPressed: _sendMessage,
+                  icon:
+                      const Icon(Icons.send, color: Colors.green),
+                  onPressed: _isSending ? null : _sendMessage,
                 ),
               ],
             ),
@@ -264,15 +253,17 @@ class _GroupBubble extends StatelessWidget {
         decoration: BoxDecoration(
           color: isMe ? Colors.green[200] : Colors.grey[300],
           borderRadius: BorderRadius.only(
-            topLeft: const Radius.circular(12),
-            topRight: const Radius.circular(12),
-            bottomLeft: isMe ? const Radius.circular(12) : Radius.zero,
-            bottomRight: isMe ? Radius.zero : const Radius.circular(12),
+            topLeft: Radius.circular(12),
+            topRight: Radius.circular(12),
+            bottomLeft: isMe ? Radius.circular(12) : Radius.zero,
+            bottomRight: isMe ? Radius.zero : Radius.circular(12),
           ),
         ),
-        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
+        constraints:
+            BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
         child: Column(
-          crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+          crossAxisAlignment:
+              isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
           children: [
             Text(
               username,
@@ -294,7 +285,9 @@ class _GroupBubble extends StatelessWidget {
               const SizedBox(height: 6),
               Wrap(
                 spacing: 4,
-                children: reactions.map((e) => Text(e, style: const TextStyle(fontSize: 16))).toList(),
+                children: reactions
+                    .map((e) => Text(e, style: const TextStyle(fontSize: 16)))
+                    .toList(),
               ),
             ]
           ],
