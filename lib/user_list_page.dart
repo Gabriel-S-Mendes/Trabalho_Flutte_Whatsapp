@@ -39,7 +39,6 @@ class UserListPageState extends State<UserListPage>
   String _searchTerm = '';
 
   // STREAM PARA RASTREAR STATUS ONLINE DE TODOS OS USUÁRIOS
-  // Usaremos um Stream simples de SELECT para escutar as mudanças na coluna is_online
   late final Stream<List<Map<String, dynamic>>> _onlineStatusStream;
 
   // Mapa para rastrear usuários online: {user_id: true/false}
@@ -54,8 +53,8 @@ class UserListPageState extends State<UserListPage>
     loadData();
     _searchController.addListener(_onSearchChanged);
     _setupStatusStream(); // 2. Inicia a escuta de status em tempo real
-    _updateOnlineStatus(
-        true); // 3. Marca o usuário como online ao iniciar o app
+    updateOnlineStatus(
+        true); // 3. USA A FUNÇÃO PÚBLICA: Marca o usuário como online ao iniciar o app
   }
 
   void loadData() {
@@ -70,8 +69,8 @@ class UserListPageState extends State<UserListPage>
     }
   }
 
-  // MÉTODO PARA ATUALIZAR A COLUNA is_online NO SUPABASE
-  Future<void> _updateOnlineStatus(bool isOnline) async {
+  // MÉTODO TORNADO PÚBLICO (sem underscore) para ser chamado do HomePage
+  Future<void> updateOnlineStatus(bool isOnline) async {
     if (currentUser == null) return;
     try {
       // Requer a política de RLS UPDATE: auth.uid() = id
@@ -109,12 +108,22 @@ class UserListPageState extends State<UserListPage>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused) {
-      // App foi minimizado/bloqueado - marca como offline
-      _updateOnlineStatus(false);
+      // App foi minimizado/bloqueado - usa a função pública
+      updateOnlineStatus(false);
     } else if (state == AppLifecycleState.resumed) {
-      // App voltou à tela - marca como online
-      _updateOnlineStatus(true);
+      // App voltou à tela - usa a função pública
+      updateOnlineStatus(true);
     }
+  }
+
+  // 🔴 PONTO CRÍTICO: MARCAR O USUÁRIO COMO OFFLINE AO FECHAR A TELA
+  @override
+  void dispose() {
+    updateOnlineStatus(false); // USA A FUNÇÃO PÚBLICA
+    WidgetsBinding.instance.removeObserver(this);
+    _searchController.removeListener(_onSearchChanged);
+    _searchController.dispose();
+    super.dispose();
   }
 
   // MÉTODO PRINCIPAL: Busca perfis e grupos
@@ -180,15 +189,6 @@ class UserListPageState extends State<UserListPage>
     setState(() {
       _searchTerm = _searchController.text.trim().toLowerCase();
     });
-  }
-
-  @override
-  void dispose() {
-    _updateOnlineStatus(false); // MARCA O USUÁRIO COMO OFFLINE AO FECHAR A TELA
-    WidgetsBinding.instance.removeObserver(this);
-    _searchController.removeListener(_onSearchChanged);
-    _searchController.dispose();
-    super.dispose();
   }
 
   @override
