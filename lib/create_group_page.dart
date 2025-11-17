@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'main.dart'; // se você usa o supabase global
+import 'main.dart'; // usa o supabase global
 
 class CreateGroupPage extends StatefulWidget {
   const CreateGroupPage({super.key});
@@ -32,38 +32,49 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
     setState(() => _isSaving = true);
 
     try {
-      final creatorId = supabase.auth.currentUser?.id;
-      if (creatorId == null) throw 'Usuário não autenticado';
+      final ownerId = supabase.auth.currentUser?.id;
+      if (ownerId == null) throw 'Usuário não autenticado';
 
-      // 1) Cria o grupo
+      // 1) Criar grupo
       final resp = await supabase
           .from('groups')
           .insert({
             'name': name,
-            'creator_id': creatorId,
+            'owner_id': ownerId, // <-- CORRETO
           })
           .select()
           .single();
 
-      final String groupId = resp['id'] as String;
+      final String groupId = resp['id'];
 
-      // 2) Insere os membros selecionados (inclui o criador também)
+      // 2) Criar lista de membros
       final members = <Map<String, dynamic>>[];
-      // adiciona membros selecionados
-      for (final id in _selectedUserIds) {
-        members.add({'group_id': groupId, 'profile_id': id});
-      }
-      // adiciona criador
-      members.add({'group_id': groupId, 'profile_id': creatorId});
 
+      // adicionar membros selecionados
+      for (final id in _selectedUserIds) {
+        members.add({
+          'group_id': groupId,
+          'user_id': id, // <-- CORRIGIDO
+        });
+      }
+
+      // adicionar o dono também
+      members.add({
+        'group_id': groupId,
+        'user_id': ownerId, // <-- CORRIGIDO
+      });
+
+      // inserir tudo de uma vez
       await supabase.from('group_members').insert(members);
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Grupo criado com sucesso!')),
-        );
-        Navigator.of(context).pop(); // volta para a Home
-      }
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Grupo criado com sucesso!')),
+      );
+
+      Navigator.of(context).pop();
+
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Erro ao criar grupo: $e')),
@@ -73,7 +84,6 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
     }
   }
 
-  // Exemplo simples: busca usuários para seleção (pode mudar pra sua UserListPage)
   Future<List<Map<String, dynamic>>> _fetchUsers() async {
     final resp = await supabase.from('profiles').select('id, username');
     return List<Map<String, dynamic>>.from(resp);
@@ -112,6 +122,7 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
                       final id = u['id'] as String;
                       final username = u['username'] as String? ?? 'Usuário';
                       final selected = _selectedUserIds.contains(id);
+
                       return CheckboxListTile(
                         value: selected,
                         title: Text(username),
@@ -139,7 +150,8 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
                     ? const SizedBox(
                         width: 18,
                         height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2))
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
                     : const Text('Criar Grupo'),
               ),
             ),
