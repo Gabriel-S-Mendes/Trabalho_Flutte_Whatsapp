@@ -1,9 +1,4 @@
-import 'dart:io';
-import 'dart:typed_data';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:file_picker/file_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'home_page.dart';
@@ -24,85 +19,11 @@ class _SignUpPageState extends State<SignUpPage> {
   final _formKey = GlobalKey<FormState>();
   bool _isLoading = false;
 
-  /// IMAGEM:
-  File? _avatarFile;         // mobile
-  Uint8List? _avatarBytes;   // web
-  String? _avatarName;       // web
-
-  // =============================
-  // Selecionar imagem (mobile + web)
-  // =============================
-
-  Future<void> _pickImage() async {
-    if (kIsWeb) {
-      // ------ WEB ------
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.image,
-        withData: true,
-      );
-      if (result == null) return;
-
-      setState(() {
-        _avatarBytes = result.files.first.bytes;
-        _avatarName = result.files.first.name;
-      });
-    } else {
-      // ------ MOBILE ------
-      final ImagePicker picker = ImagePicker();
-      final XFile? image = await picker.pickImage(
-        source: ImageSource.gallery,
-        imageQuality: 60,
-      );
-      if (image == null) return;
-
-      setState(() {
-        _avatarFile = File(image.path);
-      });
-    }
-  }
-
-  // =============================
-  // Upload da imagem
-  // =============================
-  Future<String> _uploadAvatar(String userId) async {
-    const bucket = 'avatars';
-
-    final fileName = '${userId}_${DateTime.now().millisecondsSinceEpoch}'
-        '_${_avatarName ?? "avatar.jpg"}';
-
-    if (kIsWeb) {
-      // WEB USE uploadBinary
-      await supabase.storage.from(bucket).uploadBinary(
-            fileName,
-            _avatarBytes!,
-            fileOptions: const FileOptions(upsert: true),
-          );
-    } else {
-      // MOBILE usa File
-      await supabase.storage.from(bucket).upload(
-            fileName,
-            _avatarFile!,
-            fileOptions: const FileOptions(upsert: true),
-          );
-    }
-
-    // Retorna URL pública
-    return supabase.storage.from(bucket).getPublicUrl(fileName);
-  }
-
   // =============================
   // Cadastro
   // =============================
   Future<void> _signUp() async {
     if (!_formKey.currentState!.validate()) return;
-
-    if (!kIsWeb && _avatarFile == null ||
-        kIsWeb && _avatarBytes == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Selecione uma foto de perfil.')),
-      );
-      return;
-    }
 
     setState(() => _isLoading = true);
 
@@ -127,17 +48,14 @@ class _SignUpPageState extends State<SignUpPage> {
         return;
       }
 
-      // 2. Upload do avatar
-      final avatarUrl = await _uploadAvatar(user.id);
-
-      // 3. Atualizar perfil no DB
+      // 2. Criar perfil no DB (sem avatar_url)
       await supabase.from('profiles').upsert({
         'id': user.id,
         'username': _usernameController.text.trim(),
-        'avatar_url': avatarUrl,
+        // 'avatar_url' foi removido
       });
 
-      // 4. Navegar
+      // 3. Navegar
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('Cadastro realizado com sucesso!'),
@@ -149,36 +67,21 @@ class _SignUpPageState extends State<SignUpPage> {
           MaterialPageRoute(builder: (_) => const HomePage()),
         );
       }
-    }
-
-    on StorageException catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("Erro no Storage: ${e.message}"),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
-
-    on AuthException catch (e) {
+    } on AuthException catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text("Erro de autenticação: ${e.message}"),
           backgroundColor: Colors.red,
         ),
       );
-    }
-
-    catch (e) {
+    } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text("Erro inesperado: $e"),
           backgroundColor: Colors.red,
         ),
       );
-    }
-
-    finally {
+    } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
@@ -188,14 +91,6 @@ class _SignUpPageState extends State<SignUpPage> {
   // =============================
   @override
   Widget build(BuildContext context) {
-    final imageWidget = kIsWeb
-        ? (_avatarBytes != null
-            ? CircleAvatar(radius: 60, backgroundImage: MemoryImage(_avatarBytes!))
-            : const CircleAvatar(radius: 60, child: Icon(Icons.camera_alt, size: 40)))
-        : (_avatarFile != null
-            ? CircleAvatar(radius: 60, backgroundImage: FileImage(_avatarFile!))
-            : const CircleAvatar(radius: 60, child: Icon(Icons.camera_alt, size: 40)));
-
     return Scaffold(
       appBar: AppBar(title: const Text('Criar Conta')),
       body: Center(
@@ -209,14 +104,7 @@ class _SignUpPageState extends State<SignUpPage> {
                     style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 32),
 
-                GestureDetector(
-                  onTap: _pickImage,
-                  child: imageWidget,
-                ),
-                const SizedBox(height: 8),
-                const Text('Clique para adicionar foto'),
-
-                const SizedBox(height: 32),
+                // Elementos da foto de perfil removidos aqui
 
                 TextFormField(
                   controller: _usernameController,
