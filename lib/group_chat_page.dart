@@ -1,8 +1,5 @@
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'main.dart';
 
 class GroupChatPage extends StatefulWidget {
   final String groupId;
@@ -19,170 +16,43 @@ class GroupChatPage extends StatefulWidget {
 }
 
 class _GroupChatPageState extends State<GroupChatPage> {
-  final _messageController = TextEditingController();
-  late final Stream<List<Map<String, dynamic>>> _messagesStream;
-
-  final Map<String, String> _usernames = {};
-  final Map<String, List<String>> _reactions = {};
-  final ImagePicker _picker = ImagePicker();
-
-  bool _isSending = false;
+  final supabase = Supabase.instance.client;
+  final TextEditingController _messageController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
-
-    _messagesStream = supabase
-        .from('group_messages')
-        .stream(primaryKey: ['id'])
-        .eq('group_id', widget.groupId)
-        .order('created_at', ascending: true);
-
-    _loadUsernames();
-    _listenReactions();
+    _checkMembership();
   }
 
-  // 🔥 STREAM DE REAÇÕES
-  void _listenReactions() {
-    supabase
-        .from('group_reactions')
-        .stream(primaryKey: ['id'])
-        .listen((event) {
-      _syncReactions();
-    });
-
-    _syncReactions();
-  }
-
-  Future<void> _syncReactions() async {
-    final resp = await supabase.from('group_reactions').select();
-
-    final Map<String, List<String>> newMap = {};
-
-    for (final r in resp) {
-      final messageId = r['message_id'];
-      final emoji = r['emoji'];
-
-      newMap.putIfAbsent(messageId, () => []);
-      newMap[messageId]!.add(emoji);
-    }
-
-    setState(() => _reactions
-      ..clear()
-      ..addAll(newMap));
-  }
-
-  Future<void> _loadUsernames() async {
-    final profiles = await supabase.from('profiles').select('id, username');
-
-    for (final p in profiles) {
-      _usernames[p['id']] = p['username'] ?? 'Desconhecido';
-    }
-
-    if (mounted) setState(() {});
-  }
-
-  Future<void> _sendMessage({String? content, String? imageUrl}) async {
-    final text = content?.trim() ?? _messageController.text.trim();
-    if ((text.isEmpty && imageUrl == null)) return;
-
-    final userId = supabase.auth.currentUser?.id;
-    if (userId == null) return;
-
-    _messageController.clear();
-
-    try {
-      await supabase.from('group_messages').insert({
-        'group_id': widget.groupId,
-        'sender_id': userId,
-        'content': text,
-        'image_url': imageUrl,
-      });
-    } catch (e) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Erro ao enviar mensagem: $e')));
-    }
-  }
-
-  // 🔥 ENVIO DE IMAGEM
-  Future<void> _pickAndSendImage() async {
-    final XFile? picked =
-        await _picker.pickImage(source: ImageSource.gallery, imageQuality: 70);
-
-    if (picked == null) return;
-
-    final Uint8List fileBytes = await picked.readAsBytes();
-    final String fileName = "${DateTime.now().millisecondsSinceEpoch}.jpg";
-
-    setState(() => _isSending = true);
-
-    try {
-      await supabase.storage.from('chat-images').uploadBinary(
-            fileName,
-            fileBytes,
-            fileOptions:
-                const FileOptions(contentType: 'image/jpeg', upsert: false),
-          );
-
-      final String imageUrl =
-          supabase.storage.from('chat-images').getPublicUrl(fileName);
-
-      await _sendMessage(imageUrl: imageUrl);
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Erro ao enviar imagem: $e")));
-    } finally {
-      if (mounted) setState(() => _isSending = false);
-    }
-  }
-
-  // 🔥 SOMENTE UMA REAÇÃO POR USUÁRIO
-  void _addReaction(String messageId, String emoji) async {
+  // ----------------------------------------------------
+  // 🔥 Impede usuário de acessar o grupo após sair
+  // ----------------------------------------------------
+  Future<void> _checkMembership() async {
     final userId = supabase.auth.currentUser!.id;
 
-    try {
-      await supabase
-          .from('group_reactions')
-          .delete()
-          .eq('message_id', messageId)
-          .eq('user_id', userId);
+    final res = await supabase
+        .from('group_members')
+        .select()
+        .eq('group_id', widget.groupId)
+        .eq('user_id', userId)
+        .maybeSingle();
 
-      await supabase.from('group_reactions').insert({
-        'message_id': messageId,
-        'user_id': userId,
-        'emoji': emoji,
-      });
-    } catch (e) {
-      print("Erro ao salvar reação: $e");
+    if (!mounted) return;
+
+    if (res == null) {
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Você não faz mais parte desse grupo.")),
+      );
     }
   }
 
-  Future<void> _showReactionsDialog(String messageId) async {
-    final emojis = ['👍', '❤️', '😂', '😮', '😢', '👏'];
-
-    final emoji = await showDialog<String>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Escolha uma reação'),
-        content: Wrap(
-          spacing: 10,
-          children: emojis
-              .map((e) => GestureDetector(
-                    onTap: () => Navigator.pop(context, e),
-                    child: Text(e, style: const TextStyle(fontSize: 30)),
-                  ))
-              .toList(),
-        ),
-      ),
-    );
-
-    if (emoji != null) _addReaction(messageId, emoji);
-  }
-
-  // 🔥 MOSTRAR INTEGRANTES DO GRUPO
+  // ----------------------------------------------------
+  // 🔥 Popup que lista membros + botão de sair do grupo
+  // ----------------------------------------------------
   Future<void> _showMembers() async {
     try {
-      // Buscar apenas user_id
       final members = await supabase
           .from('group_members')
           .select('user_id')
@@ -190,7 +60,6 @@ class _GroupChatPageState extends State<GroupChatPage> {
 
       final List memList = members as List? ?? [];
 
-      // Buscar usernames
       List<Map<String, dynamic>> detailed = [];
 
       for (final m in memList) {
@@ -214,14 +83,59 @@ class _GroupChatPageState extends State<GroupChatPage> {
           title: const Text("Integrantes do grupo"),
           content: SizedBox(
             width: double.maxFinite,
-            height: 300,
+            height: 350,
             child: ListView.builder(
-              itemCount: detailed.length,
+              itemCount: detailed.length + 1, // +1 para o botão de sair
               itemBuilder: (_, i) {
+                // -----------------------------------------------
+                // 🔥 Botão "SAIR DO GRUPO" dentro da lista
+                // -----------------------------------------------
+                if (i == detailed.length) {
+                  return ListTile(
+                    leading: const Icon(Icons.logout, color: Colors.red),
+                    title: const Text(
+                      "Sair do grupo",
+                      style: TextStyle(
+                        color: Colors.red,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    onTap: () async {
+                      final userId = supabase.auth.currentUser!.id;
+
+                      try {
+                        await supabase
+                            .from('group_members')
+                            .delete()
+                            .eq('group_id', widget.groupId)
+                            .eq('user_id', userId);
+
+                        Navigator.pop(ctx); // fecha popup
+                        Navigator.pop(context); // sai da tela do grupo
+
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text("Você saiu do grupo.")),
+                        );
+                      } catch (e) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                              content:
+                                  Text("Erro ao sair do grupo: $e")),
+                        );
+                      }
+                    },
+                  );
+                }
+
+                // -----------------------------------------------
+                // 🔥 Exibir membros normalmente
+                // -----------------------------------------------
                 final m = detailed[i];
                 return ListTile(
                   leading: CircleAvatar(
-                    child: Text(m['username'][0].toUpperCase()),
+                    child: Text(
+                      m['username'][0].toUpperCase(),
+                    ),
                   ),
                   title: Text(m['username']),
                   subtitle: Text(m['user_id']),
@@ -233,61 +147,85 @@ class _GroupChatPageState extends State<GroupChatPage> {
             TextButton(
               onPressed: () => Navigator.pop(ctx),
               child: const Text("Fechar"),
-            )
+            ),
           ],
         ),
       );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Erro ao carregar membros: $e")),
+        SnackBar(content: Text("Erro ao carregar participantes: $e")),
       );
     }
   }
 
+  // ----------------------------------------------------
+  // 🔥 Enviar mensagem
+  // ----------------------------------------------------
+  Future<void> _sendMessage() async {
+    final text = _messageController.text.trim();
+    if (text.isEmpty) return;
+
+    final userId = supabase.auth.currentUser!.id;
+
+    await supabase.from('messages').insert({
+      'group_id': widget.groupId,
+      'sender_id': userId,
+      'content': text,
+    });
+
+    _messageController.clear();
+  }
+
   @override
   Widget build(BuildContext context) {
-    final myId = supabase.auth.currentUser?.id ?? '';
-
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.groupName),
         actions: [
-          // 🔥 BOTÃO DE MEMBROS
           IconButton(
             icon: const Icon(Icons.group),
             onPressed: _showMembers,
           ),
         ],
       ),
+
+      // ----------------------------------------------------
+      // 🔥 Stream de mensagens em tempo real
+      // ----------------------------------------------------
       body: Column(
         children: [
           Expanded(
             child: StreamBuilder<List<Map<String, dynamic>>>(
-              stream: _messagesStream,
+              stream: supabase
+                  .from('messages')
+                  .stream(primaryKey: ['id'])
+                  .eq('group_id', widget.groupId)
+                  .order('created_at')
+                  .map((rows) => rows),
               builder: (context, snapshot) {
-                if (!snapshot.hasData)
-                  return const Center(child: CircularProgressIndicator());
-
-                final messages = snapshot.data!;
+                final messages = snapshot.data ?? [];
 
                 return ListView.builder(
-                  reverse: true,
+                  padding: const EdgeInsets.all(12),
                   itemCount: messages.length,
-                  itemBuilder: (context, index) {
-                    final msg = messages[messages.length - 1 - index];
-                    final isMe = msg['sender_id'] == myId;
-                    final username =
-                        _usernames[msg['sender_id']] ?? 'Carregando...';
-                    final messageId = msg['id'].toString();
+                  itemBuilder: (_, i) {
+                    final msg = messages[i];
+                    final isMe =
+                        msg['sender_id'] == supabase.auth.currentUser!.id;
 
-                    return GestureDetector(
-                      onTap: () => _showReactionsDialog(messageId),
-                      child: _GroupBubble(
-                        message: msg['content'],
-                        imageUrl: msg['image_url'],
-                        username: username,
-                        isMe: isMe,
-                        reactions: _reactions[messageId] ?? [],
+                    return Container(
+                      alignment:
+                          isMe ? Alignment.centerRight : Alignment.centerLeft,
+                      margin: const EdgeInsets.symmetric(vertical: 5),
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: isMe
+                              ? Colors.blue[300]
+                              : Colors.grey[300],
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(msg['content']),
                       ),
                     );
                   },
@@ -296,105 +234,29 @@ class _GroupChatPageState extends State<GroupChatPage> {
             ),
           ),
 
-          // Campo de texto
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: Colors.grey[100],
-              border: const Border(top: BorderSide(color: Colors.black12)),
-            ),
+          // ----------------------------------------------------
+          // 🔥 Caixa de texto para enviar mensagem
+          // ----------------------------------------------------
+          Padding(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
             child: Row(
               children: [
-                IconButton(
-                  icon: Icon(Icons.image,
-                      color: _isSending ? Colors.grey : Colors.green),
-                  onPressed: _isSending ? null : _pickAndSendImage,
-                ),
                 Expanded(
                   child: TextField(
                     controller: _messageController,
-                    decoration: const InputDecoration.collapsed(
-                        hintText: 'Mensagem...'),
-                    onSubmitted: (_) => _sendMessage(),
+                    decoration:
+                        const InputDecoration(hintText: "Escreva algo..."),
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.send, color: Colors.green),
-                  onPressed: _isSending ? null : _sendMessage,
+                  icon: const Icon(Icons.send),
+                  onPressed: _sendMessage,
                 ),
               ],
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _GroupBubble extends StatelessWidget {
-  final String? message;
-  final String? imageUrl;
-  final String username;
-  final bool isMe;
-  final List<String> reactions;
-
-  const _GroupBubble({
-    this.message,
-    this.imageUrl,
-    required this.username,
-    required this.isMe,
-    required this.reactions,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Align(
-      alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color: isMe ? Colors.green[200] : Colors.grey[300],
-          borderRadius: BorderRadius.only(
-            topLeft: Radius.circular(12),
-            topRight: Radius.circular(12),
-            bottomLeft: isMe ? Radius.circular(12) : Radius.zero,
-            bottomRight: isMe ? Radius.zero : Radius.circular(12),
-          ),
-        ),
-        constraints:
-            BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
-        child: Column(
-          crossAxisAlignment:
-              isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-          children: [
-            Text(
-              username,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-                color: isMe ? Colors.green[900] : Colors.black87,
-              ),
-            ),
-            if (message != null) ...[
-              const SizedBox(height: 4),
-              Text(message!, style: const TextStyle(fontSize: 15)),
-            ],
-            if (imageUrl != null) ...[
-              const SizedBox(height: 6),
-              Image.network(imageUrl!),
-            ],
-            if (reactions.isNotEmpty) ...[
-              const SizedBox(height: 6),
-              Wrap(
-                spacing: 4,
-                children: reactions
-                    .map((e) => Text(e, style: const TextStyle(fontSize: 16)))
-                    .toList(),
-              ),
-            ]
-          ],
-        ),
       ),
     );
   }
