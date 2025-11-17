@@ -1,8 +1,8 @@
 import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'dart:async'; // Necessário para Timer (embora não usado diretamente, é bom para o contexto)
 import 'main.dart';
 
 // 🎯 Widget de Exibição de Mensagem Individual
@@ -61,7 +61,8 @@ class ChatBubble extends StatelessWidget {
                 Text(
                   "${sentAt.day.toString().padLeft(2, '0')}/${sentAt.month.toString().padLeft(2, '0')} ${sentAt.hour.toString().padLeft(2, '0')}:${sentAt.minute.toString().padLeft(2, '0')}",
                   style: TextStyle(
-                    color: isCurrentUser ? Colors.white70 : Colors.grey.shade300,
+                    color:
+                        isCurrentUser ? Colors.white70 : Colors.grey.shade300,
                     fontSize: 10,
                   ),
                 ),
@@ -79,9 +80,12 @@ class DirectMessagePage extends StatefulWidget {
   const DirectMessagePage({
     super.key,
     required this.recipientProfile,
+    // NOVO: Adiciona o status de digitação do destinatário
+    required this.isRecipientTyping,
   });
 
   final Map<String, dynamic> recipientProfile;
+  final bool isRecipientTyping; // Recebe o status da UserListPage
 
   @override
   State<DirectMessagePage> createState() => _DirectMessagePageState();
@@ -96,6 +100,9 @@ class _DirectMessagePageState extends State<DirectMessagePage> {
   late final String recipientId;
   bool _isSending = false;
 
+  // NOVO: Variável para controlar o status de digitação localmente
+  bool _isTyping = false;
+
   @override
   void initState() {
     super.initState();
@@ -106,12 +113,43 @@ class _DirectMessagePageState extends State<DirectMessagePage> {
     recipientId = widget.recipientProfile['id'] as String;
     _scrollController = ScrollController();
 
+    // NOVO: Listener para detectar alterações no campo de texto
+    _textController.addListener(_onTextChange);
+
     // 🔹 Stream de mensagens de TODOS, filtrado localmente
     _messagesStream = supabase
         .from('messages')
-        .stream(primaryKey: ['id'])
-        .order('created_at', ascending: true);
+        .stream(primaryKey: ['id']).order('created_at', ascending: true);
   }
+
+  // --- FUNÇÕES DE STATUS DIGITANDO (MÉTODO ARCAICO) ---
+
+  // NOVO: Atualiza a coluna 'is_typing' na tabela profiles
+  Future<void> _updateTypingStatus(bool isTyping) async {
+    if (currentUser == null) return;
+    try {
+      await supabase
+          .from('profiles')
+          .update({'is_typing': isTyping}).eq('id', currentUserId);
+    } catch (e) {
+      print('Erro ao atualizar status is_typing: $e');
+    }
+  }
+
+  // NOVO: Gerencia a detecção de digitação
+  void _onTextChange() {
+    final bool currentlyTyping = _textController.text.trim().isNotEmpty;
+
+    // Envia o UPDATE apenas se o estado de digitação mudar
+    if (currentlyTyping != _isTyping) {
+      _isTyping = currentlyTyping;
+
+      // ATUALIZA O DB
+      _updateTypingStatus(_isTyping);
+    }
+  }
+
+  // --- FUNÇÕES DE MENSAGENS E UTILIDADE ---
 
   Future<void> _sendMessage() async {
     if (_textController.text.trim().isEmpty || _isSending) return;
@@ -120,6 +158,9 @@ class _DirectMessagePageState extends State<DirectMessagePage> {
 
     final text = _textController.text.trim();
     _textController.clear();
+
+    // MODIFICADO: Desliga o status de digitação ao enviar a mensagem
+    _updateTypingStatus(false);
 
     try {
       await supabase.from('messages').insert({
@@ -131,7 +172,8 @@ class _DirectMessagePageState extends State<DirectMessagePage> {
 
       _scrollToBottom();
     } on PostgrestException catch (e) {
-      if (mounted) _showSnackBar(context, 'Erro ao enviar mensagem: ${e.message}');
+      if (mounted)
+        _showSnackBar(context, 'Erro ao enviar mensagem: ${e.message}');
     } finally {
       if (mounted) setState(() => _isSending = false);
     }
@@ -144,6 +186,9 @@ class _DirectMessagePageState extends State<DirectMessagePage> {
 
     if (picked == null) return;
 
+    // MODIFICADO: Desliga o status de digitação ao enviar a imagem
+    _updateTypingStatus(false);
+
     final Uint8List fileBytes = await picked.readAsBytes();
     final String fileName = "${DateTime.now().millisecondsSinceEpoch}.jpg";
 
@@ -154,7 +199,8 @@ class _DirectMessagePageState extends State<DirectMessagePage> {
       await supabase.storage.from('chat-images').uploadBinary(
             fileName,
             fileBytes,
-            fileOptions: const FileOptions(contentType: 'image/jpeg', upsert: false),
+            fileOptions:
+                const FileOptions(contentType: 'image/jpeg', upsert: false),
           );
 
       final String imageUrl =
@@ -195,6 +241,10 @@ class _DirectMessagePageState extends State<DirectMessagePage> {
 
   @override
   void dispose() {
+    // NOVO: Remove o listener e desliga o status de digitação no DB ao sair da página
+    _textController.removeListener(_onTextChange);
+    _updateTypingStatus(false);
+
     _textController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -202,19 +252,38 @@ class _DirectMessagePageState extends State<DirectMessagePage> {
 
   @override
   Widget build(BuildContext context) {
-    final recipientUsername =
-        widget.recipientProfile['username'] as String? ?? 'Usuário Desconhecido';
-    final recipientOnline = widget.recipientProfile['is_online'] as bool? ?? false;
+    final recipientUsername = widget.recipientProfile['username'] as String? ??
+        'Usuário Desconhecido';
+    final recipientOnline =
+        widget.recipientProfile['is_online'] as bool? ?? false;
+    // NOVO: Obtém o status de digitação do destinatário
+    final recipientTyping = widget.isRecipientTyping;
 
     return Scaffold(
       appBar: AppBar(
-        title: Row(
+        // MODIFICADO: Exibe o status de digitação no AppBar
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(recipientUsername),
-            const SizedBox(width: 8),
-            CircleAvatar(
-              radius: 6,
-              backgroundColor: recipientOnline ? Colors.green : Colors.grey,
+            Row(
+              children: [
+                CircleAvatar(
+                  radius: 6,
+                  backgroundColor: recipientOnline ? Colors.green : Colors.grey,
+                ),
+                const SizedBox(width: 8),
+                if (recipientTyping)
+                  const Text(
+                    'Digitando...',
+                    style: TextStyle(fontSize: 12, color: Colors.greenAccent),
+                  )
+                else
+                  Text(
+                    recipientOnline ? 'Online' : 'Offline',
+                    style: const TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
+              ],
             ),
           ],
         ),
@@ -263,7 +332,8 @@ class _DirectMessagePageState extends State<DirectMessagePage> {
                     final messageData = messages[index];
                     final content = messageData['content'] as String?;
                     final senderId = messageData['sender_id'] as String;
-                    final sentAt = DateTime.parse(messageData['created_at'] as String);
+                    final sentAt =
+                        DateTime.parse(messageData['created_at'] as String);
                     final imageUrl = messageData['image_url'] as String?;
                     final isCurrentUserMessage = senderId == currentUserId;
 
@@ -311,7 +381,9 @@ class _DirectMessagePageState extends State<DirectMessagePage> {
                   onPressed: _isSending ? null : _sendMessage,
                   icon: Icon(
                     Icons.send,
-                    color: _isSending ? Colors.grey : Theme.of(context).primaryColor,
+                    color: _isSending
+                        ? Colors.grey
+                        : Theme.of(context).primaryColor,
                   ),
                   tooltip: 'Enviar Mensagem',
                 ),

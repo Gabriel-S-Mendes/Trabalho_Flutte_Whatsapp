@@ -41,8 +41,8 @@ class UserListPageState extends State<UserListPage>
   // STREAM PARA RASTREAR STATUS ONLINE DE TODOS OS USUÁRIOS
   late final Stream<List<Map<String, dynamic>>> _onlineStatusStream;
 
-  // Mapa para rastrear usuários online: {user_id: true/false}
-  Map<String, bool> _onlineUsersMap = {};
+  // MODIFICADO: Mapa para rastrear is_online e is_typing: {user_id: {'online': true/false, 'typing': true/false}}
+  Map<String, Map<String, bool>> _userStatusMap = {};
 
   @override
   void initState() {
@@ -85,7 +85,7 @@ class UserListPageState extends State<UserListPage>
 
   // CONFIGURAÇÃO DO STREAM PARA ESCUTAR ATUALIZAÇÕES DE STATUS
   void _setupStatusStream() {
-    // Escuta qualquer evento de UPDATE na tabela 'profiles' (onde 'is_online' muda)
+    // MODIFICADO: Seleciona is_typing também
     _onlineStatusStream =
         supabase.from('profiles').stream(primaryKey: ['id']).map((data) {
       // Processa os dados recebidos em tempo real
@@ -94,9 +94,11 @@ class UserListPageState extends State<UserListPage>
           for (final row in data) {
             final id = row['id'] as String;
             final isOnline = row['is_online'] as bool? ?? false;
+            // NOVO: Captura o status de digitação
+            final isTyping = row['is_typing'] as bool? ?? false;
 
-            // Atualiza o mapa de status
-            _onlineUsersMap[id] = isOnline;
+            // MODIFICADO: Atualiza o mapa de status aninhado
+            _userStatusMap[id] = {'online': isOnline, 'typing': isTyping};
           }
         });
       }
@@ -130,20 +132,24 @@ class UserListPageState extends State<UserListPage>
   Future<List<ChatItem>> _fetchCombinedItems() async {
     final currentUserId = currentUser!.id;
 
-    // 1. FETCH DOS PERFIS (Usuários) - Seleciona a coluna 'is_online'
+    // 1. FETCH DOS PERFIS (Usuários) - MODIFICADO: Seleciona 'is_online' E 'is_typing'
     final profilesData = await supabase
         .from('profiles')
-        .select('*, is_online')
+        .select('*, is_online, is_typing') // Adicionado 'is_typing'
         .neq('id', currentUserId)
         .order('username', ascending: true);
 
     final profiles = (profilesData as List<dynamic>).map((user) {
       // Inicializa o mapa com o status inicial vindo da busca
-      _onlineUsersMap[user['id'] as String] =
-          user['is_online'] as bool? ?? false;
+      final String userId = user['id'] as String;
+      final bool isOnline = user['is_online'] as bool? ?? false;
+      final bool isTyping = user['is_typing'] as bool? ?? false;
+
+      // MODIFICADO: Inicializa o mapa de status
+      _userStatusMap[userId] = {'online': isOnline, 'typing': isTyping};
 
       return ChatItem(
-        id: user['id'] as String,
+        id: userId,
         title: user['username'] as String? ?? 'Usuário Sem Nome',
         avatarUrl: user['avatar_url'] as String?,
         isGroup: false,
@@ -214,7 +220,7 @@ class UserListPageState extends State<UserListPage>
           ),
         ),
         Expanded(
-          // O StreamBuilder escuta as mudanças de status (is_online) em tempo real
+          // O StreamBuilder escuta as mudanças de status (is_online, is_typing) em tempo real
           child: StreamBuilder<List<Map<String, dynamic>>>(
             stream: _onlineStatusStream,
             builder: (context, streamSnapshot) {
@@ -267,10 +273,34 @@ class UserListPageState extends State<UserListPage>
                           ? Colors.green.shade700
                           : Colors.blueGrey.shade700;
 
-                      // VERIFICAÇÃO DE STATUS ONLINE: Usa o mapa atualizado pelo stream
-                      // Se o item não for um grupo E o mapa indicar TRUE, está online.
+                      // NOVO/MODIFICADO: Pega o status do mapa (inicializado no fetch e atualizado pelo stream)
+                      final Map<String, bool> status =
+                          _userStatusMap[item.id] ??
+                              {'online': false, 'typing': false};
+
                       final bool isOnline =
-                          !item.isGroup && (_onlineUsersMap[item.id] == true);
+                          !item.isGroup && status['online'] == true;
+                      final bool isTyping =
+                          !item.isGroup && status['typing'] == true; // NOVO
+
+                      // Determina o Subtitle
+                      String subtitleText;
+                      Color subtitleColor;
+
+                      if (item.isGroup) {
+                        subtitleText = 'Grupo';
+                        subtitleColor = Colors.greenAccent;
+                      } else if (isTyping) {
+                        subtitleText =
+                            'Digitando...'; // Exibe o status de digitação!
+                        subtitleColor = Colors.lightBlueAccent;
+                      } else if (isOnline) {
+                        subtitleText = 'Online agora';
+                        subtitleColor = Colors.grey;
+                      } else {
+                        subtitleText = 'Toque para iniciar a conversa';
+                        subtitleColor = Colors.grey;
+                      }
 
                       return Padding(
                         padding: const EdgeInsets.symmetric(
@@ -313,16 +343,10 @@ class UserListPageState extends State<UserListPage>
                           title: Text(item.title,
                               style: const TextStyle(
                                   fontWeight: FontWeight.bold, fontSize: 18)),
+                          // Subtitle com lógica de status
                           subtitle: Text(
-                            item.isGroup
-                                ? 'Grupo'
-                                : isOnline
-                                    ? 'Online agora' // Status Online (para a apresentação)
-                                    : 'Toque para iniciar a conversa', // Status Offline
-                            style: TextStyle(
-                                color: item.isGroup
-                                    ? Colors.greenAccent
-                                    : Colors.grey),
+                            subtitleText,
+                            style: TextStyle(color: subtitleColor),
                           ),
                           trailing: const Icon(Icons.arrow_forward_ios,
                               size: 16, color: Colors.grey),
@@ -331,7 +355,10 @@ class UserListPageState extends State<UserListPage>
                                 ? GroupChatPage(
                                     groupId: item.id, groupName: item.title)
                                 : DirectMessagePage(
-                                    recipientProfile: item.data);
+                                    recipientProfile: item.data,
+                                    isRecipientTyping:
+                                        isTyping, // NOVO: Passa o status de digitação
+                                  );
 
                             Navigator.of(context).push(
                               MaterialPageRoute(
