@@ -14,6 +14,9 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
   final List<String> _selectedUserIds = [];
   bool _isSaving = false;
 
+  /// NOVO → define se o grupo é privado ou público
+  bool _isPrivate = true;
+
   @override
   void dispose() {
     _nameController.dispose();
@@ -35,26 +38,34 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
       final creatorId = supabase.auth.currentUser?.id;
       if (creatorId == null) throw 'Usuário não autenticado';
 
-      // 1) Cria o grupo
+      // 1) Cria o grupo já com campo is_private
       final resp = await supabase
           .from('groups')
           .insert({
             'name': name,
             'creator_id': creatorId,
+            'is_private': _isPrivate, // ← ADICIONADO AQUI
           })
           .select()
           .single();
 
       final String groupId = resp['id'] as String;
 
-      // 2) Insere os membros selecionados (inclui o criador também)
+      // 2) Insere os membros selecionados
       final members = <Map<String, dynamic>>[];
-      // adiciona membros selecionados
+
       for (final id in _selectedUserIds) {
-        members.add({'group_id': groupId, 'profile_id': id});
+        members.add({
+          'group_id': groupId,
+          'profile_id': id,
+        });
       }
-      // adiciona criador
-      members.add({'group_id': groupId, 'profile_id': creatorId});
+
+      // adiciona o criador automaticamente
+      members.add({
+        'group_id': groupId,
+        'profile_id': creatorId,
+      });
 
       await supabase.from('group_members').insert(members);
 
@@ -62,8 +73,6 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Grupo criado com sucesso!')),
         );
-
-        // CORREÇÃO: Retorna 'true' para sinalizar o recarregamento na UserListPage
         Navigator.of(context).pop(true);
       }
     } catch (e) {
@@ -71,7 +80,6 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Erro ao criar grupo: $e')),
         );
-        // Retorna 'false' em caso de erro
         Navigator.of(context).pop(false);
       }
     } finally {
@@ -79,7 +87,6 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
     }
   }
 
-  // Exemplo simples: busca usuários para seleção
   Future<List<Map<String, dynamic>>> _fetchUsers() async {
     final currentUserId = supabase.auth.currentUser!.id;
     final resp = await supabase
@@ -104,7 +111,25 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
               controller: _nameController,
               decoration: const InputDecoration(labelText: 'Nome do grupo'),
             ),
+
+            const SizedBox(height: 16),
+
+            // 🔥 SWITCH PRIVADO/PÚBLICO
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Grupo privado'),
+                Switch(
+                  value: _isPrivate,
+                  onChanged: (v) {
+                    setState(() => _isPrivate = v);
+                  },
+                ),
+              ],
+            ),
+
             const SizedBox(height: 12),
+
             Expanded(
               child: FutureBuilder<List<Map<String, dynamic>>>(
                 future: _fetchUsers(),
@@ -114,8 +139,10 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
                   }
                   if (snapshot.hasError) {
                     return Center(
-                        child: Text(
-                            'Erro ao carregar usuários: ${snapshot.error}'));
+                      child: Text(
+                        'Erro ao carregar usuários: ${snapshot.error}',
+                      ),
+                    );
                   }
 
                   final users = snapshot.data ?? [];
@@ -146,7 +173,9 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
                 },
               ),
             ),
+
             const SizedBox(height: 12),
+
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
@@ -155,7 +184,8 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
                     ? const SizedBox(
                         width: 18,
                         height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2))
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
                     : const Text('Criar Grupo'),
               ),
             ),
