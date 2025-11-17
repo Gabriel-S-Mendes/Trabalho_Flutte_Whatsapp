@@ -52,13 +52,15 @@ class _ProfilePageState extends State<ProfilePage> {
     try {
       final profile = await supabase
           .from('profiles')
-          .select('*')
+          // Selecionando os campos que você precisa
+          .select('name_account, avatar_url')
           .eq('id', currentUser!.id)
           .single();
 
       setState(() {
         _profileData = profile;
-        _usernameController.text = profile['username'] ?? '';
+        // CORREÇÃO: Usar 'name_account' para carregar o nome de usuário no campo de edição
+        _usernameController.text = profile['name_account'] ?? '';
       });
     } on PostgrestException catch (error) {
       _showSnackBar(context, 'Erro ao carregar perfil: ${error.message}');
@@ -85,9 +87,10 @@ class _ProfilePageState extends State<ProfilePage> {
     setState(() => _isLoading = true);
 
     try {
+      // CORREÇÃO: Usar 'name_account' para atualizar o nome de usuário no DB
+      // REMOVIDO: a chave 'updated_at' para resolver o problema de coluna ausente
       await supabase.from('profiles').update({
-        'username': newUsername,
-        'updated_at': DateTime.now().toIso8601String(),
+        'name_account': newUsername,
       }).eq('id', currentUser!.id);
 
       _showSnackBar(context, 'Nome de usuário atualizado com sucesso!');
@@ -104,7 +107,7 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   // ----------------------------------------------------------
-  // 🖼️ FUNÇÃO: ENVIAR AVATAR (COMPATÍVEL COM WEB)
+  // 🖼️ FUNÇÃO: ENVIAR AVATAR
   // ----------------------------------------------------------
   Future<void> _uploadAvatar() async {
     if (currentUser == null || _isLoading) return;
@@ -121,7 +124,7 @@ class _ProfilePageState extends State<ProfilePage> {
     setState(() => _isLoading = true);
 
     try {
-      // 💡 CORREÇÃO WEB: LER O ARQUIVO COMO BYTES
+      // LER O ARQUIVO COMO BYTES
       final bytes = await pickedFile.readAsBytes();
       final fileExtension = pickedFile.name.split('.').last;
       final mimeType = pickedFile.mimeType ?? 'image/jpeg';
@@ -129,7 +132,7 @@ class _ProfilePageState extends State<ProfilePage> {
       final fileName =
           '${currentUser!.id}/${DateTime.now().millisecondsSinceEpoch}.$fileExtension';
 
-      // 1. UPLOAD para o Storage (Usando uploadBinary para bytes)
+      // 1. UPLOAD para o Storage
       await supabase.storage.from('avatars').uploadBinary(
             fileName,
             bytes,
@@ -177,7 +180,7 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   // ----------------------------------------------------------
-  // 🖥️ INTERFACE (Com correção para exibição da imagem)
+  // 🖥️ INTERFACE
   // ----------------------------------------------------------
   @override
   Widget build(BuildContext context) {
@@ -196,6 +199,7 @@ class _ProfilePageState extends State<ProfilePage> {
     }
 
     final avatarUrl = _profileData!['avatar_url'];
+    final accountName = _profileData!['name_account'] ?? 'Nome de Usuário Não Definido'; // Exibe o nome
 
     return Scaffold(
       appBar: AppBar(
@@ -206,13 +210,12 @@ class _ProfilePageState extends State<ProfilePage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Imagem de Perfil (Avatar) - CORRIGIDO PARA EXIBIÇÃO
+            // Imagem de Perfil (Avatar)
             GestureDetector(
               onTap: _uploadAvatar,
               child: Center(
                 child: Stack(
                   children: [
-                    // O Avatar base (fundo cinza e ícone fallback)
                     CircleAvatar(
                       radius: 60,
                       backgroundColor: Colors.grey.shade700,
@@ -221,17 +224,13 @@ class _ProfilePageState extends State<ProfilePage> {
                               size: 60, color: Colors.white70)
                           : null,
                     ),
-
-                    // O Avatar com a Imagem de Rede (carregado)
                     if (avatarUrl != null && avatarUrl.isNotEmpty)
                       ClipOval(
-                        // Garante que a imagem carregada seja circular
                         child: Image.network(
                           avatarUrl,
                           width: 120, // 2 * radius
                           height: 120, // 2 * radius
                           fit: BoxFit.cover,
-                          // Adiciona um indicador de carregamento
                           loadingBuilder: (context, child, loadingProgress) {
                             if (loadingProgress == null) return child;
                             return const SizedBox(
@@ -245,15 +244,12 @@ class _ProfilePageState extends State<ProfilePage> {
                               ),
                             );
                           },
-                          // Loga o erro se a imagem não carregar (útil para diagnosticar RLS)
                           errorBuilder: (context, error, stackTrace) {
                             print('Erro ao carregar avatar: $error');
                             return const SizedBox(width: 120, height: 120);
                           },
                         ),
                       ),
-
-                    // O ícone de câmera (Posicionamento)
                     const Positioned(
                       bottom: 0,
                       right: 0,
@@ -270,6 +266,19 @@ class _ProfilePageState extends State<ProfilePage> {
             ),
 
             const SizedBox(height: 32),
+            
+            // EXIBIÇÃO DO NOME DA CONTA
+            Center(
+              child: Text(
+                accountName,
+                style: const TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
 
             // E-mail (Somente Leitura)
             Text(
@@ -283,7 +292,7 @@ class _ProfilePageState extends State<ProfilePage> {
             TextFormField(
               controller: _usernameController,
               decoration: const InputDecoration(
-                labelText: 'Nome de Usuário',
+                labelText: 'Editar Nome da Conta',
                 border: OutlineInputBorder(),
               ),
             ),

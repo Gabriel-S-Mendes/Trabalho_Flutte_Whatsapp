@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart'; // Importação necessária para o Supabase
 import 'main.dart'; // Ajuste conforme o caminho do seu arquivo main
 
 class CreateGroupPage extends StatefulWidget {
@@ -34,7 +35,7 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
       final creatorId = supabase.auth.currentUser?.id;
       if (creatorId == null) throw 'Usuário não autenticado';
 
-      // 1) Cria o grupo (CORRIGIDO: creator_id → owner_id)
+      // 1) Cria o grupo
       final resp = await supabase
           .from('groups')
           .insert({
@@ -78,14 +79,24 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
     }
   }
 
+  // 📥 FUNÇÃO CORRIGIDA: Buscar usuários incluindo 'name_account'
   Future<List<Map<String, dynamic>>> _fetchUsers() async {
     final currentUserId = supabase.auth.currentUser!.id;
     final resp = await supabase
         .from('profiles')
-        .select('id, username')
+        // 🎯 CORREÇÃO 1: Incluindo 'name_account' no select
+        .select('id, name_account, username') 
         .neq('id', currentUserId);
 
-    return List<Map<String, dynamic>>.from(resp);
+    // Converte a resposta para o tipo esperado e ordena pelo nome da conta
+    final users = List<Map<String, dynamic>>.from(resp);
+    users.sort((a, b) {
+      final aName = (a['name_account'] ?? a['username'] ?? '').toString().toLowerCase();
+      final bName = (b['name_account'] ?? b['username'] ?? '').toString().toLowerCase();
+      return aName.compareTo(bName);
+    });
+
+    return users;
   }
 
   @override
@@ -103,6 +114,8 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
               decoration: const InputDecoration(labelText: 'Nome do grupo'),
             ),
             const SizedBox(height: 12),
+            const Text('Selecione os membros:', style: TextStyle(fontSize: 16)),
+            const SizedBox(height: 8),
             Expanded(
               child: FutureBuilder<List<Map<String, dynamic>>>(
                 future: _fetchUsers(),
@@ -123,12 +136,15 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
                     itemBuilder: (context, i) {
                       final u = users[i];
                       final id = u['id'] as String;
-                      final username = u['username'] as String? ?? 'Usuário';
+                      
+                      // 🎯 CORREÇÃO 2: Exibir 'name_account' com fallback para 'username' (email)
+                      final displayName = u['name_account'] as String? ?? u['username'] as String? ?? 'Usuário Sem Nome';
+                      
                       final selected = _selectedUserIds.contains(id);
 
                       return CheckboxListTile(
                         value: selected,
-                        title: Text(username),
+                        title: Text(displayName), // Exibe o nome da conta
                         onChanged: (v) {
                           setState(() {
                             if (v == true) {

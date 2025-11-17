@@ -119,12 +119,13 @@ class UserListPageState extends State<UserListPage>
   Future<List<ChatItem>> _fetchCombinedItems() async {
     final currentUserId = currentUser!.id;
 
-    // 1. FETCH DOS PERFIS (Usuários) - Seleciona 'is_online' e 'is_typing'
+    // 1. FETCH DOS PERFIS (Usuários)
     final profilesData = await supabase
         .from('profiles')
-        .select('*, is_online, is_typing')
+        // 🎯 CORREÇÃO 1: Incluindo 'name_account' no select
+        .select('*, is_online, is_typing, name_account') 
         .neq('id', currentUserId)
-        .order('username', ascending: true);
+        .order('name_account', ascending: true); // Ordenando pelo nome da conta
 
     final profiles = (profilesData as List<dynamic>).map((user) {
       final String userId = user['id'] as String;
@@ -133,10 +134,13 @@ class UserListPageState extends State<UserListPage>
 
       // Inicializa o mapa de status
       _userStatusMap[userId] = {'online': isOnline, 'typing': isTyping};
+      
+      // 🎯 CORREÇÃO 2: Usando 'name_account' como título. Fallback para 'username' (email)
+      final String displayName = user['name_account'] as String? ?? user['username'] as String? ?? 'Usuário Sem Nome';
 
       return ChatItem(
         id: userId,
-        title: user['username'] as String? ?? 'Usuário Sem Nome',
+        title: displayName, // Agora usa o name_account ou o username (email)
         avatarUrl: user['avatar_url'] as String?,
         isGroup: false,
         data: Map<String, dynamic>.from(user as Map),
@@ -170,6 +174,7 @@ class UserListPageState extends State<UserListPage>
     }
 
     final allItems = [...profiles, ...groups];
+    // A ordenação agora usará o nome da conta (que está no 'title')
     allItems
         .sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
 
@@ -321,7 +326,8 @@ class UserListPageState extends State<UserListPage>
                                 ),
                             ],
                           ),
-                          title: Text(item.title,
+                          // O título já é o name_account/username graças à correção no _fetchCombinedItems
+                          title: Text(item.title, 
                               style: const TextStyle(
                                   fontWeight: FontWeight.bold, fontSize: 18)),
                           subtitle: Text(
@@ -333,12 +339,12 @@ class UserListPageState extends State<UserListPage>
                           onTap: () {
                             final Widget targetPage = item.isGroup
                                 ? GroupChatPage(
-                                    groupId: item.id, groupName: item.title)
+                                      groupId: item.id, groupName: item.title)
                                 : DirectMessagePage(
-                                    recipientProfile: item.data,
-                                    // Passa o status inicial para evitar lag
-                                    isRecipientTyping: isTyping,
-                                  );
+                                      recipientProfile: item.data,
+                                      // Passa o status inicial para evitar lag
+                                      isRecipientTyping: isTyping,
+                                    );
 
                             Navigator.of(context).push(
                               MaterialPageRoute(
