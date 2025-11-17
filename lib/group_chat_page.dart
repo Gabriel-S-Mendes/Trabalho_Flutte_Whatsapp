@@ -42,7 +42,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
     _listenReactions();
   }
 
-  // 🔥 LISTENER DE REAÇÕES EM TEMPO REAL
+  // 🔥 STREAM DE REAÇÕES
   void _listenReactions() {
     supabase
         .from('group_reactions')
@@ -54,7 +54,6 @@ class _GroupChatPageState extends State<GroupChatPage> {
     _syncReactions();
   }
 
-  // 🔥 Carregar reações do banco
   Future<void> _syncReactions() async {
     final resp = await supabase.from('group_reactions').select();
 
@@ -105,7 +104,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
     }
   }
 
-  // 🔥 Enviar imagem
+  // 🔥 ENVIO DE IMAGEM
   Future<void> _pickAndSendImage() async {
     final XFile? picked =
         await _picker.pickImage(source: ImageSource.gallery, imageQuality: 70);
@@ -137,19 +136,17 @@ class _GroupChatPageState extends State<GroupChatPage> {
     }
   }
 
-  // 🔥 APENAS UMA REAÇÃO POR USUÁRIO
+  // 🔥 SOMENTE UMA REAÇÃO POR USUÁRIO
   void _addReaction(String messageId, String emoji) async {
     final userId = supabase.auth.currentUser!.id;
 
     try {
-      // Remove qualquer reação anterior desse usuário nessa mensagem
       await supabase
           .from('group_reactions')
           .delete()
           .eq('message_id', messageId)
           .eq('user_id', userId);
 
-      // Insere a nova reação
       await supabase.from('group_reactions').insert({
         'message_id': messageId,
         'user_id': userId,
@@ -182,6 +179,71 @@ class _GroupChatPageState extends State<GroupChatPage> {
     if (emoji != null) _addReaction(messageId, emoji);
   }
 
+  // 🔥 MOSTRAR INTEGRANTES DO GRUPO
+  Future<void> _showMembers() async {
+    try {
+      // Buscar apenas user_id
+      final members = await supabase
+          .from('group_members')
+          .select('user_id')
+          .eq('group_id', widget.groupId);
+
+      final List memList = members as List? ?? [];
+
+      // Buscar usernames
+      List<Map<String, dynamic>> detailed = [];
+
+      for (final m in memList) {
+        final userId = m['user_id'];
+
+        final profile = await supabase
+            .from('profiles')
+            .select('username')
+            .eq('id', userId)
+            .maybeSingle();
+
+        detailed.add({
+          'user_id': userId,
+          'username': profile?['username'] ?? 'Desconhecido',
+        });
+      }
+
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text("Integrantes do grupo"),
+          content: SizedBox(
+            width: double.maxFinite,
+            height: 300,
+            child: ListView.builder(
+              itemCount: detailed.length,
+              itemBuilder: (_, i) {
+                final m = detailed[i];
+                return ListTile(
+                  leading: CircleAvatar(
+                    child: Text(m['username'][0].toUpperCase()),
+                  ),
+                  title: Text(m['username']),
+                  subtitle: Text(m['user_id']),
+                );
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text("Fechar"),
+            )
+          ],
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Erro ao carregar membros: $e")),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final myId = supabase.auth.currentUser?.id ?? '';
@@ -189,6 +251,13 @@ class _GroupChatPageState extends State<GroupChatPage> {
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.groupName),
+        actions: [
+          // 🔥 BOTÃO DE MEMBROS
+          IconButton(
+            icon: const Icon(Icons.group),
+            onPressed: _showMembers,
+          ),
+        ],
       ),
       body: Column(
         children: [
