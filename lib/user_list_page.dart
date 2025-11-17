@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'main.dart'; // Certifique-se de que a variável global 'supabase' está aqui
-import 'direct_message_page.dart'; // Adapte se o nome do arquivo for diferente
-import 'group_chat_page.dart'; // Adapte se o nome do arquivo for diferente
+import 'direct_message_page.dart'; // Importação obrigatória
+import 'group_chat_page.dart'; // Importação obrigatória
 
 // Modelo para combinar Perfis e Grupos
 class ChatItem {
@@ -30,7 +30,6 @@ class UserListPage extends StatefulWidget {
   State<UserListPage> createState() => UserListPageState();
 }
 
-// Implementa WidgetsBindingObserver para rastrear se o app está aberto ou fechado
 class UserListPageState extends State<UserListPage>
     with WidgetsBindingObserver {
   Future<List<ChatItem>>? _combinedFuture;
@@ -38,23 +37,21 @@ class UserListPageState extends State<UserListPage>
   final TextEditingController _searchController = TextEditingController();
   String _searchTerm = '';
 
-  // STREAM PARA RASTREAR STATUS ONLINE DE TODOS OS USUÁRIOS
+  // STREAM PARA RASTREAR STATUS ONLINE E TYPING
   late final Stream<List<Map<String, dynamic>>> _onlineStatusStream;
 
-  // MODIFICADO: Mapa para rastrear is_online e is_typing: {user_id: {'online': true/false, 'typing': true/false}}
+  // Mapa para rastrear is_online e is_typing: {user_id: {'online': true/false, 'typing': true/false}}
   Map<String, Map<String, bool>> _userStatusMap = {};
 
   @override
   void initState() {
     super.initState();
-    // 1. OBRIGATÓRIO: Adiciona o observador do ciclo de vida para o status offline
     WidgetsBinding.instance.addObserver(this);
 
     loadData();
     _searchController.addListener(_onSearchChanged);
-    _setupStatusStream(); // 2. Inicia a escuta de status em tempo real
-    updateOnlineStatus(
-        true); // 3. USA A FUNÇÃO PÚBLICA: Marca o usuário como online ao iniciar o app
+    _setupStatusStream();
+    updateOnlineStatus(true);
   }
 
   void loadData() {
@@ -69,35 +66,30 @@ class UserListPageState extends State<UserListPage>
     }
   }
 
-  // MÉTODO TORNADO PÚBLICO (sem underscore) para ser chamado do HomePage
   Future<void> updateOnlineStatus(bool isOnline) async {
     if (currentUser == null) return;
     try {
-      // Requer a política de RLS UPDATE: auth.uid() = id
       await supabase
           .from('profiles')
           .update({'is_online': isOnline}).eq('id', currentUser!.id);
     } catch (e) {
-      // Erros aqui geralmente são RLS - mas ignoramos para o fluxo da apresentação
-      print('Erro ao atualizar status online (VERIFIQUE O RLS UPDATE): $e');
+      print('Erro ao atualizar status online: $e');
     }
   }
 
   // CONFIGURAÇÃO DO STREAM PARA ESCUTAR ATUALIZAÇÕES DE STATUS
   void _setupStatusStream() {
-    // MODIFICADO: Seleciona is_typing também
+    // Escuta is_online e is_typing
     _onlineStatusStream =
         supabase.from('profiles').stream(primaryKey: ['id']).map((data) {
-      // Processa os dados recebidos em tempo real
       if (mounted) {
         setState(() {
           for (final row in data) {
             final id = row['id'] as String;
             final isOnline = row['is_online'] as bool? ?? false;
-            // NOVO: Captura o status de digitação
             final isTyping = row['is_typing'] as bool? ?? false;
 
-            // MODIFICADO: Atualiza o mapa de status aninhado
+            // Atualiza o mapa de status aninhado
             _userStatusMap[id] = {'online': isOnline, 'typing': isTyping};
           }
         });
@@ -106,46 +98,40 @@ class UserListPageState extends State<UserListPage>
     });
   }
 
-  // Rastreia se o app foi para o background ou voltou
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused) {
-      // App foi minimizado/bloqueado - usa a função pública
       updateOnlineStatus(false);
     } else if (state == AppLifecycleState.resumed) {
-      // App voltou à tela - usa a função pública
       updateOnlineStatus(true);
     }
   }
 
-  // 🔴 PONTO CRÍTICO: MARCAR O USUÁRIO COMO OFFLINE AO FECHAR A TELA
   @override
   void dispose() {
-    updateOnlineStatus(false); // USA A FUNÇÃO PÚBLICA
+    updateOnlineStatus(false);
     WidgetsBinding.instance.removeObserver(this);
     _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
     super.dispose();
   }
 
-  // MÉTODO PRINCIPAL: Busca perfis e grupos
   Future<List<ChatItem>> _fetchCombinedItems() async {
     final currentUserId = currentUser!.id;
 
-    // 1. FETCH DOS PERFIS (Usuários) - MODIFICADO: Seleciona 'is_online' E 'is_typing'
+    // 1. FETCH DOS PERFIS (Usuários) - Seleciona 'is_online' e 'is_typing'
     final profilesData = await supabase
         .from('profiles')
-        .select('*, is_online, is_typing') // Adicionado 'is_typing'
+        .select('*, is_online, is_typing')
         .neq('id', currentUserId)
         .order('username', ascending: true);
 
     final profiles = (profilesData as List<dynamic>).map((user) {
-      // Inicializa o mapa com o status inicial vindo da busca
       final String userId = user['id'] as String;
       final bool isOnline = user['is_online'] as bool? ?? false;
       final bool isTyping = user['is_typing'] as bool? ?? false;
 
-      // MODIFICADO: Inicializa o mapa de status
+      // Inicializa o mapa de status
       _userStatusMap[userId] = {'online': isOnline, 'typing': isTyping};
 
       return ChatItem(
@@ -157,7 +143,7 @@ class UserListPageState extends State<UserListPage>
       );
     }).toList();
 
-    // 2. FETCH DOS GRUPOS (USANDO RPC) - (Mantido o código original)
+    // 2. FETCH DOS GRUPOS (RPC) - (Mantido o código original)
     final groupsData = await supabase.rpc(
       'get_user_groups',
       params: {
@@ -183,7 +169,6 @@ class UserListPageState extends State<UserListPage>
       }
     }
 
-    // 3. COMBINAÇÃO E ORDENAÇÃO FINAL
     final allItems = [...profiles, ...groups];
     allItems
         .sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
@@ -220,11 +205,9 @@ class UserListPageState extends State<UserListPage>
           ),
         ),
         Expanded(
-          // O StreamBuilder escuta as mudanças de status (is_online, is_typing) em tempo real
           child: StreamBuilder<List<Map<String, dynamic>>>(
             stream: _onlineStatusStream,
             builder: (context, streamSnapshot) {
-              // O FutureBuilder carrega a lista inicial de contatos
               return FutureBuilder<List<ChatItem>>(
                 future: _combinedFuture,
                 builder: (context, snapshot) {
@@ -273,7 +256,6 @@ class UserListPageState extends State<UserListPage>
                           ? Colors.green.shade700
                           : Colors.blueGrey.shade700;
 
-                      // NOVO/MODIFICADO: Pega o status do mapa (inicializado no fetch e atualizado pelo stream)
                       final Map<String, bool> status =
                           _userStatusMap[item.id] ??
                               {'online': false, 'typing': false};
@@ -281,7 +263,7 @@ class UserListPageState extends State<UserListPage>
                       final bool isOnline =
                           !item.isGroup && status['online'] == true;
                       final bool isTyping =
-                          !item.isGroup && status['typing'] == true; // NOVO
+                          !item.isGroup && status['typing'] == true;
 
                       // Determina o Subtitle
                       String subtitleText;
@@ -291,8 +273,7 @@ class UserListPageState extends State<UserListPage>
                         subtitleText = 'Grupo';
                         subtitleColor = Colors.greenAccent;
                       } else if (isTyping) {
-                        subtitleText =
-                            'Digitando...'; // Exibe o status de digitação!
+                        subtitleText = 'Digitando...';
                         subtitleColor = Colors.lightBlueAccent;
                       } else if (isOnline) {
                         subtitleText = 'Online agora';
@@ -343,7 +324,6 @@ class UserListPageState extends State<UserListPage>
                           title: Text(item.title,
                               style: const TextStyle(
                                   fontWeight: FontWeight.bold, fontSize: 18)),
-                          // Subtitle com lógica de status
                           subtitle: Text(
                             subtitleText,
                             style: TextStyle(color: subtitleColor),
@@ -356,8 +336,8 @@ class UserListPageState extends State<UserListPage>
                                     groupId: item.id, groupName: item.title)
                                 : DirectMessagePage(
                                     recipientProfile: item.data,
-                                    isRecipientTyping:
-                                        isTyping, // NOVO: Passa o status de digitação
+                                    // Passa o status inicial para evitar lag
+                                    isRecipientTyping: isTyping,
                                   );
 
                             Navigator.of(context).push(

@@ -1,396 +1,219 @@
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'dart:async'; // Necessário para Timer (embora não usado diretamente, é bom para o contexto)
-import 'main.dart';
+import 'main.dart'; // Importe a variável global 'supabase'
+import 'dart:async'; // Necessário para o Timer (debounce)
 
-// 🎯 Widget de Exibição de Mensagem Individual
-class ChatBubble extends StatelessWidget {
-  const ChatBubble({
-    super.key,
-    required this.message,
-    required this.isCurrentUser,
-    required this.sentAt,
-    this.imageUrl,
-  });
-
-  final String? message;
-  final bool isCurrentUser;
-  final DateTime sentAt;
-  final String? imageUrl;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
-      child: Row(
-        mainAxisAlignment:
-            isCurrentUser ? MainAxisAlignment.end : MainAxisAlignment.start,
-        children: [
-          Container(
-            constraints: BoxConstraints(
-              maxWidth: MediaQuery.of(context).size.width * 0.75,
-            ),
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: isCurrentUser
-                  ? Theme.of(context).primaryColor
-                  : Colors.grey.shade700,
-              borderRadius: BorderRadius.only(
-                topLeft: const Radius.circular(16),
-                topRight: const Radius.circular(16),
-                bottomLeft: isCurrentUser
-                    ? const Radius.circular(16)
-                    : const Radius.circular(2),
-                bottomRight: isCurrentUser
-                    ? const Radius.circular(2)
-                    : const Radius.circular(16),
-              ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (message != null)
-                  Text(message!, style: const TextStyle(color: Colors.white)),
-                if (imageUrl != null) ...[
-                  const SizedBox(height: 4),
-                  Image.network(imageUrl!),
-                ],
-                const SizedBox(height: 4),
-                Text(
-                  "${sentAt.day.toString().padLeft(2, '0')}/${sentAt.month.toString().padLeft(2, '0')} ${sentAt.hour.toString().padLeft(2, '0')}:${sentAt.minute.toString().padLeft(2, '0')}",
-                  style: TextStyle(
-                    color:
-                        isCurrentUser ? Colors.white70 : Colors.grey.shade300,
-                    fontSize: 10,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// 💬 Tela Principal de Mensagem Direta
 class DirectMessagePage extends StatefulWidget {
+  final Map<String, dynamic> recipientProfile;
+  final bool isRecipientTyping;
+
   const DirectMessagePage({
     super.key,
     required this.recipientProfile,
-    // NOVO: Adiciona o status de digitação do destinatário
-    required this.isRecipientTyping,
+    this.isRecipientTyping = false,
   });
-
-  final Map<String, dynamic> recipientProfile;
-  final bool isRecipientTyping; // Recebe o status da UserListPage
 
   @override
   State<DirectMessagePage> createState() => _DirectMessagePageState();
 }
 
 class _DirectMessagePageState extends State<DirectMessagePage> {
-  late final Stream<List<Map<String, dynamic>>> _messagesStream;
-  final TextEditingController _textController = TextEditingController();
   final User? currentUser = supabase.auth.currentUser;
-  late final ScrollController _scrollController;
-  late final String currentUserId;
-  late final String recipientId;
-  bool _isSending = false;
+  final TextEditingController _messageController = TextEditingController();
 
-  // NOVO: Variável para controlar o status de digitação localmente
-  bool _isTyping = false;
+  // Variáveis para controle de debounce e status local
+  Timer? _typingTimer;
+  bool _isTypingLocally = false;
+
+  // Stream para rastrear o status de digitação do destinatário em tempo real
+  late final Stream<Map<String, dynamic>> _recipientStatusStream;
 
   @override
   void initState() {
     super.initState();
+    final recipientId = widget.recipientProfile['id'] as String;
 
-    if (currentUser == null) return;
-
-    currentUserId = currentUser!.id;
-    recipientId = widget.recipientProfile['id'] as String;
-    _scrollController = ScrollController();
-
-    // NOVO: Listener para detectar alterações no campo de texto
-    _textController.addListener(_onTextChange);
-
-    // 🔹 Stream de mensagens de TODOS, filtrado localmente
-    _messagesStream = supabase
-        .from('messages')
-        .stream(primaryKey: ['id']).order('created_at', ascending: true);
+    // SINTAXE CORRIGIDA: Removendo .select() e .limit(1) para evitar o erro.
+    // O stream agora retorna o payload completo da linha do perfil.
+    _recipientStatusStream = supabase
+        .from('profiles')
+        .stream(primaryKey: ['id'])
+        .eq('id', recipientId)
+        .map((dataList) {
+          // O Supabase Realtime retorna uma lista de dados (dataList).
+          // Retornamos o primeiro item, que contém os campos 'is_online' e 'is_typing'.
+          if (dataList.isNotEmpty) {
+            return dataList.first;
+          }
+          return {};
+        });
   }
 
-  // --- FUNÇÕES DE STATUS DIGITANDO (MÉTODO ARCAICO) ---
+  // MÉTODO PARA ATUALIZAR O STATUS DE DIGITAÇÃO DO USUÁRIO LOCAL NO SUPABASE
+  Future<void> _setIsTyping(bool isTyping) async {
+    if (currentUser == null || _isTypingLocally == isTyping) return;
 
-  // NOVO: Atualiza a coluna 'is_typing' na tabela profiles
-  Future<void> _updateTypingStatus(bool isTyping) async {
-    if (currentUser == null) return;
+    _isTypingLocally = isTyping;
+
     try {
       await supabase
           .from('profiles')
-          .update({'is_typing': isTyping}).eq('id', currentUserId);
+          .update({'is_typing': isTyping}).eq('id', currentUser!.id);
     } catch (e) {
-      print('Erro ao atualizar status is_typing: $e');
+      print('Erro ao atualizar status de digitação: $e');
     }
   }
 
-  // NOVO: Gerencia a detecção de digitação
-  void _onTextChange() {
-    final bool currentlyTyping = _textController.text.trim().isNotEmpty;
+  // LÓGICA DE DEBOUNCE
+  void _handleTyping(String text) {
+    if (text.trim().isNotEmpty) {
+      // 1. Seta o status para TRUE imediatamente
+      _setIsTyping(true);
 
-    // Envia o UPDATE apenas se o estado de digitação mudar
-    if (currentlyTyping != _isTyping) {
-      _isTyping = currentlyTyping;
-
-      // ATUALIZA O DB
-      _updateTypingStatus(_isTyping);
-    }
-  }
-
-  // --- FUNÇÕES DE MENSAGENS E UTILIDADE ---
-
-  Future<void> _sendMessage() async {
-    if (_textController.text.trim().isEmpty || _isSending) return;
-
-    setState(() => _isSending = true);
-
-    final text = _textController.text.trim();
-    _textController.clear();
-
-    // MODIFICADO: Desliga o status de digitação ao enviar a mensagem
-    _updateTypingStatus(false);
-
-    try {
-      await supabase.from('messages').insert({
-        'sender_id': currentUserId,
-        'recipient_id': recipientId,
-        'content': text,
-        'image_url': null,
-      });
-
-      _scrollToBottom();
-    } on PostgrestException catch (e) {
-      if (mounted)
-        _showSnackBar(context, 'Erro ao enviar mensagem: ${e.message}');
-    } finally {
-      if (mounted) setState(() => _isSending = false);
-    }
-  }
-
-  Future<void> _sendImage() async {
-    final picker = ImagePicker();
-    final XFile? picked =
-        await picker.pickImage(source: ImageSource.gallery, imageQuality: 70);
-
-    if (picked == null) return;
-
-    // MODIFICADO: Desliga o status de digitação ao enviar a imagem
-    _updateTypingStatus(false);
-
-    final Uint8List fileBytes = await picked.readAsBytes();
-    final String fileName = "${DateTime.now().millisecondsSinceEpoch}.jpg";
-
-    setState(() => _isSending = true);
-
-    try {
-      // Upload da imagem
-      await supabase.storage.from('chat-images').uploadBinary(
-            fileName,
-            fileBytes,
-            fileOptions:
-                const FileOptions(contentType: 'image/jpeg', upsert: false),
-          );
-
-      final String imageUrl =
-          supabase.storage.from('chat-images').getPublicUrl(fileName);
-
-      await supabase.from('messages').insert({
-        'sender_id': currentUserId,
-        'recipient_id': recipientId,
-        'content': null,
-        'image_url': imageUrl,
-      });
-
-      _scrollToBottom();
-    } catch (e) {
-      _showSnackBar(context, "Erro ao enviar imagem: $e");
-    } finally {
-      if (mounted) setState(() => _isSending = false);
-    }
-  }
-
-  void _scrollToBottom() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        );
+      // 2. Reseta o timer (debounce)
+      if (_typingTimer?.isActive ?? false) {
+        _typingTimer!.cancel();
       }
-    });
+
+      // 3. Cria um novo timer: se expirar (1.5s), seta o status para FALSE
+      _typingTimer = Timer(const Duration(milliseconds: 1500), () {
+        _setIsTyping(false);
+      });
+    } else {
+      // Campo vazio, seta imediatamente para FALSE e cancela o timer
+      _setIsTyping(false);
+      _typingTimer?.cancel();
+    }
   }
 
-  void _showSnackBar(BuildContext context, String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: Colors.redAccent),
-    );
+  // Lógica de envio da mensagem
+  void _sendMessage() {
+    if (_messageController.text.trim().isEmpty) return;
+
+    // TODO: Implementar a lógica de inserção da mensagem aqui
+
+    _messageController.clear();
+
+    // Importante: Reseta o status de digitação para FALSE após o envio
+    _setIsTyping(false);
+    _typingTimer?.cancel();
   }
 
   @override
   void dispose() {
-    // NOVO: Remove o listener e desliga o status de digitação no DB ao sair da página
-    _textController.removeListener(_onTextChange);
-    _updateTypingStatus(false);
-
-    _textController.dispose();
-    _scrollController.dispose();
+    // Garante que o status 'is_typing' seja FALSE ao sair da tela
+    _setIsTyping(false);
+    _typingTimer?.cancel();
+    _messageController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final recipientUsername = widget.recipientProfile['username'] as String? ??
-        'Usuário Desconhecido';
-    final recipientOnline =
-        widget.recipientProfile['is_online'] as bool? ?? false;
-    // NOVO: Obtém o status de digitação do destinatário
-    final recipientTyping = widget.isRecipientTyping;
+    final recipientName = widget.recipientProfile['username'] as String;
 
     return Scaffold(
       appBar: AppBar(
-        // MODIFICADO: Exibe o status de digitação no AppBar
+        leading: Padding(
+          padding: const EdgeInsets.all(8.0),
+          child: CircleAvatar(
+            backgroundColor: Colors.blueGrey.shade700,
+            backgroundImage: widget.recipientProfile['avatar_url'] != null &&
+                    widget.recipientProfile['avatar_url'].isNotEmpty
+                ? NetworkImage(widget.recipientProfile['avatar_url'])
+                : null,
+            child: (widget.recipientProfile['avatar_url'] == null ||
+                    widget.recipientProfile['avatar_url'].isEmpty)
+                ? const Icon(Icons.person, size: 20, color: Colors.white70)
+                : null,
+          ),
+        ),
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(recipientUsername),
-            Row(
-              children: [
-                CircleAvatar(
-                  radius: 6,
-                  backgroundColor: recipientOnline ? Colors.green : Colors.grey,
-                ),
-                const SizedBox(width: 8),
-                if (recipientTyping)
-                  const Text(
-                    'Digitando...',
-                    style: TextStyle(fontSize: 12, color: Colors.greenAccent),
-                  )
-                else
-                  Text(
-                    recipientOnline ? 'Online' : 'Offline',
-                    style: const TextStyle(fontSize: 12, color: Colors.grey),
-                  ),
-              ],
-            ),
-          ],
-        ),
-        backgroundColor: Theme.of(context).appBarTheme.backgroundColor,
-        elevation: 1,
-      ),
-      body: Column(
-        children: [
-          Expanded(
-            child: StreamBuilder<List<Map<String, dynamic>>>(
-              stream: _messagesStream,
+            Text(recipientName,
+                style:
+                    const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+
+            // StreamBuilder para exibir o status em tempo real
+            StreamBuilder<Map<String, dynamic>>(
+              stream: _recipientStatusStream,
+              initialData: {
+                // Pega o status inicial do perfil para o primeiro estado
+                'is_online': widget.recipientProfile['is_online'] ?? false,
+                'is_typing': widget.isRecipientTyping
+              },
               builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
+                // Se o dado do stream for nulo, usa os dados iniciais
+                final data = snapshot.data ?? {};
+
+                // Os campos agora são acessados diretamente do mapa retornado pelo stream
+                final bool isOnline = data['is_online'] == true;
+                final bool isTyping = data['is_typing'] == true;
+
+                String statusText;
+                Color statusColor;
+
+                // Lógica de prioridade de status: Digitanto > Online > Offline
+                if (isTyping) {
+                  statusText = 'Digitando...';
+                  statusColor = Colors.lightBlueAccent;
+                } else if (isOnline) {
+                  statusText = 'Online agora';
+                  statusColor = Colors.greenAccent;
+                } else {
+                  statusText = 'Offline';
+                  statusColor = Colors.grey;
                 }
 
-                if (snapshot.hasError) {
-                  return Center(
-                    child: Text(
-                      'Erro de conexão: ${snapshot.error}',
-                      style: const TextStyle(color: Colors.redAccent),
-                    ),
-                  );
-                }
-
-                final raw = snapshot.data ?? [];
-                final messages = raw.where((m) {
-                  final s = m['sender_id']?.toString();
-                  final r = m['recipient_id']?.toString();
-                  return (s == currentUserId && r == recipientId) ||
-                      (s == recipientId && r == currentUserId);
-                }).toList();
-
-                _scrollToBottom();
-
-                if (messages.isEmpty) {
-                  return Center(
-                    child: Text('Inicie uma conversa com $recipientUsername!'),
-                  );
-                }
-
-                return ListView.builder(
-                  controller: _scrollController,
-                  itemCount: messages.length,
-                  itemBuilder: (context, index) {
-                    final messageData = messages[index];
-                    final content = messageData['content'] as String?;
-                    final senderId = messageData['sender_id'] as String;
-                    final sentAt =
-                        DateTime.parse(messageData['created_at'] as String);
-                    final imageUrl = messageData['image_url'] as String?;
-                    final isCurrentUserMessage = senderId == currentUserId;
-
-                    return ChatBubble(
-                      message: content,
-                      isCurrentUser: isCurrentUserMessage,
-                      sentAt: sentAt.toLocal(),
-                      imageUrl: imageUrl,
-                    );
-                  },
+                return Text(
+                  statusText,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: statusColor,
+                    fontWeight: FontWeight.normal,
+                  ),
                 );
               },
             ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: Row(
-              children: [
-                IconButton(
-                  onPressed: _isSending ? null : _sendImage,
-                  icon: const Icon(Icons.image),
-                  tooltip: 'Enviar imagem',
-                ),
-                Expanded(
-                  child: TextFormField(
-                    controller: _textController,
-                    decoration: InputDecoration(
-                      hintText: 'Digite sua mensagem...',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(25.0),
-                        borderSide: BorderSide.none,
-                      ),
-                      filled: true,
-                      fillColor: Colors.grey.shade800,
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 20,
-                        vertical: 10,
-                      ),
-                    ),
-                    maxLines: null,
+          ],
+        ),
+      ),
+
+      body: const Center(
+        child: Text("Área de mensagens (Implementar Chat Bubble)",
+            style: TextStyle(color: Colors.white70)),
+      ),
+
+      // Campo de texto com a lógica de digitação (debounce)
+      bottomNavigationBar: Padding(
+        // Adiciona um padding para considerar o teclado na navegação
+        padding: EdgeInsets.only(
+          left: 8.0,
+          right: 8.0,
+          bottom: MediaQuery.of(context).viewInsets.bottom + 8.0,
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: TextFormField(
+                controller: _messageController,
+                onChanged: _handleTyping, // Chama a função de debounce
+                decoration: InputDecoration(
+                  hintText: 'Digite uma mensagem...',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(25.0),
                   ),
                 ),
-                const SizedBox(width: 8),
-                IconButton(
-                  onPressed: _isSending ? null : _sendMessage,
-                  icon: Icon(
-                    Icons.send,
-                    color: _isSending
-                        ? Colors.grey
-                        : Theme.of(context).primaryColor,
-                  ),
-                  tooltip: 'Enviar Mensagem',
-                ),
-              ],
+              ),
             ),
-          ),
-        ],
+            IconButton(
+              onPressed: _sendMessage,
+              icon: const Icon(Icons.send),
+              color: Theme.of(context).colorScheme.primary,
+            ),
+          ],
+        ),
       ),
     );
   }
