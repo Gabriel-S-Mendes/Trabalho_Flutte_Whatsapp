@@ -3,10 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'main.dart';
-import 'dart:async'; // Necessário para o Timer (debounce)
+import 'dart:async';
 
 // ----------------------------------------------------------
-// 🟦 WIDGET DE BOLHA DE MENSAGEM (MANTIDO DO SEU CÓDIGO)
+// 🟦 WIDGET DE BOLHA DE MENSAGEM
 // ----------------------------------------------------------
 class ChatBubble extends StatelessWidget {
   const ChatBubble({
@@ -15,12 +15,14 @@ class ChatBubble extends StatelessWidget {
     required this.imageUrl,
     required this.isCurrentUser,
     required this.sentAt,
+    this.reactions = const [],
   });
 
   final String? message;
   final String? imageUrl;
   final bool isCurrentUser;
   final DateTime sentAt;
+  final List<String> reactions;
 
   @override
   Widget build(BuildContext context) {
@@ -81,6 +83,17 @@ class ChatBubble extends StatelessWidget {
                     fontSize: 10,
                   ),
                 ),
+                // Exibir reações
+                if (reactions.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 4,
+                    children: reactions
+                        .map((e) =>
+                            Text(e, style: const TextStyle(fontSize: 16)))
+                        .toList(),
+                  ),
+                ]
               ],
             ),
           ),
@@ -91,10 +104,9 @@ class ChatBubble extends StatelessWidget {
 }
 
 // ----------------------------------------------------------
-// 🔵 TELA DE MENSAGENS DIRETAS (COM STATUS DE DIGITAÇÃO)
+// 🔵 TELA DE MENSAGENS DIRETAS
 // ----------------------------------------------------------
 class DirectMessagePage extends StatefulWidget {
-  // Adicionando isRecipientTyping para a consistência com os outros arquivos
   final Map<String, dynamic> recipientProfile;
   final bool isRecipientTyping;
 
@@ -114,8 +126,12 @@ class _DirectMessagePageState extends State<DirectMessagePage> {
   final ScrollController _scrollController = ScrollController();
 
   late final Stream<List<Map<String, dynamic>>> _messagesStream;
+  final Map<String, List<String>> _reactions = {};
 
-  // Variáveis para a funcionalidade 'Digitando...'
+  // 🔥 CORREÇÃO REALTIME: Usa StreamSubscription para cancelar o listener (sem o .on())
+  late final StreamSubscription<List<Map<String, dynamic>>>
+      _reactionsSubscription;
+
   Timer? _typingTimer;
   bool _isTypingLocally = false;
   late final Stream<Map<String, dynamic>> _recipientStatusStream;
@@ -132,14 +148,10 @@ class _DirectMessagePageState extends State<DirectMessagePage> {
     currentUserId = currentUser!.id;
     recipientId = widget.recipientProfile['id'] as String;
 
-    // 1. STREAM DE MENSAGENS (Restaurado e Corrigido o filtro de ordem)
-    // O filtro de quem envia/recebe será feito no StreamBuilder,
-    // então aqui apenas escutamos a tabela e ordenamos.
     _messagesStream = supabase
         .from('messages')
         .stream(primaryKey: ['id']).order('created_at', ascending: true);
 
-    // 2. STREAM DE STATUS DE DIGITAÇÃO (Nosso novo recurso)
     _recipientStatusStream = supabase
         .from('profiles')
         .stream(primaryKey: ['id'])
@@ -150,10 +162,92 @@ class _DirectMessagePageState extends State<DirectMessagePage> {
           }
           return {};
         });
+
+    _listenReactions();
   }
 
   // ----------------------------------------------------------
-  // LÓGICA DE DEBOUNCE (Mantida a lógica que funcionou perfeitamente)
+  // 🔥 REAÇÕES DM: Lógica de Realtime e Sincronização (Corrigida)
+  // ----------------------------------------------------------
+
+  void _listenReactions() {
+    // 🔥 CORREÇÃO REALTIME: Volta para a sintaxe stream().listen()
+    // Isso garante a compatibilidade e a atualização em tempo real
+    _reactionsSubscription = supabase
+        .from('message_reactions')
+        .stream(primaryKey: ['id']).listen((event) {
+      _syncReactions();
+    });
+
+    _syncReactions(); // Carrega as reações iniciais
+  }
+
+  Future<void> _syncReactions() async {
+    final resp = await supabase.from('message_reactions').select();
+
+    final Map<String, List<String>> newMap = {};
+
+    for (final r in resp) {
+      final messageId = r['message_id'].toString();
+      final emoji = r['emoji'] as String;
+
+      newMap.putIfAbsent(messageId, () => []);
+      newMap[messageId]!.add(emoji);
+    }
+
+    if (mounted) {
+      setState(() => _reactions
+        ..clear()
+        ..addAll(newMap));
+    }
+  }
+
+  void _addReaction(String messageId, String emoji) async {
+    final userId = supabase.auth.currentUser!.id;
+
+    try {
+      // 1. DELETE (UPSERT): Remove a reação existente do usuário
+      await supabase
+          .from('message_reactions')
+          .delete()
+          .eq('message_id', int.parse(messageId))
+          .eq('user_id', userId);
+
+      // 2. INSERT: Adiciona a nova reação
+      await supabase.from('message_reactions').insert({
+        'message_id': int.parse(messageId),
+        'user_id': userId,
+        'emoji': emoji,
+      });
+    } catch (e) {
+      print("Erro ao salvar reação: $e");
+    }
+  }
+
+  Future<void> _showReactionsDialog(String messageId) async {
+    final emojis = ['👍', '❤️', '😂', '😮', '😢', '👏'];
+
+    final emoji = await showDialog<String>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Escolha uma reação'),
+        content: Wrap(
+          spacing: 10,
+          children: emojis
+              .map((e) => GestureDetector(
+                    onTap: () => Navigator.pop(context, e),
+                    child: Text(e, style: const TextStyle(fontSize: 30)),
+                  ))
+              .toList(),
+        ),
+      ),
+    );
+
+    if (emoji != null) _addReaction(messageId, emoji);
+  }
+
+  // ----------------------------------------------------------
+  // LÓGICA DE DEBOUNCE, ENVIO DE MENSAGEM, ENVIO DE IMAGEM (Mantidas)
   // ----------------------------------------------------------
   Future<void> _setIsTyping(bool isTyping) async {
     if (currentUser == null || _isTypingLocally == isTyping) return;
@@ -190,14 +284,10 @@ class _DirectMessagePageState extends State<DirectMessagePage> {
     }
   }
 
-  // ----------------------------------------------------------
-  // ✉ ENVIO DE TEXTO (Integrando limpeza de status)
-  // ----------------------------------------------------------
   Future<void> _sendMessage() async {
     final text = _textController.text.trim();
     if (text.isEmpty || _isSending) return;
 
-    // Ações para o status 'Digitando...'
     _textController.clear();
     _setIsTyping(false);
     _typingTimer?.cancel();
@@ -218,9 +308,6 @@ class _DirectMessagePageState extends State<DirectMessagePage> {
     }
   }
 
-  // ----------------------------------------------------------
-  // 🖼 ENVIO DE IMAGEM (Mantido do seu código)
-  // ----------------------------------------------------------
   Future<void> _sendImage() async {
     final picker = ImagePicker();
 
@@ -260,9 +347,6 @@ class _DirectMessagePageState extends State<DirectMessagePage> {
     }
   }
 
-  // ----------------------------------------------------------
-  // 🔽 SCROLL E SNACKBAR
-  // ----------------------------------------------------------
   void _scrollToBottom() {
     if (!_scrollController.hasClients) return;
 
@@ -285,11 +369,15 @@ class _DirectMessagePageState extends State<DirectMessagePage> {
     _typingTimer?.cancel();
     _textController.dispose();
     _scrollController.dispose();
+
+    // 🔥 CORREÇÃO REALTIME: Cancela a inscrição do Stream
+    _reactionsSubscription.cancel();
+
     super.dispose();
   }
 
   // ----------------------------------------------------------
-  // 🖥 INTERFACE (AppBar e Body Corrigidos)
+  // 🖥 INTERFACE
   // ----------------------------------------------------------
   @override
   Widget build(BuildContext context) {
@@ -297,11 +385,8 @@ class _DirectMessagePageState extends State<DirectMessagePage> {
 
     return Scaffold(
       appBar: AppBar(
-        // leading padrão é mantido para o botão de voltar.
         title: Row(
-          // Usamos Row no 'title' para organizar Avatar, Nome e Status.
           children: [
-            // Avatar
             Padding(
               padding: const EdgeInsets.only(right: 8.0),
               child: CircleAvatar(
@@ -317,16 +402,12 @@ class _DirectMessagePageState extends State<DirectMessagePage> {
                     : null,
               ),
             ),
-
-            // Nome e Status
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(username,
                     style: const TextStyle(
                         fontSize: 18, fontWeight: FontWeight.bold)),
-
-                // StreamBuilder para exibir o status em tempo real
                 StreamBuilder<Map<String, dynamic>>(
                   stream: _recipientStatusStream,
                   initialData: {
@@ -369,14 +450,12 @@ class _DirectMessagePageState extends State<DirectMessagePage> {
       ),
       body: Column(
         children: [
-          // ---------------- MENSAGENS ---------------- (Restaurado o seu StreamBuilder)
           Expanded(
             child: StreamBuilder<List<Map<String, dynamic>>>(
               stream: _messagesStream,
               builder: (context, snapshot) {
                 final rawMessages = snapshot.data ?? [];
 
-                // SEU FILTRO ORIGINAL: Filtra mensagens de ambos os lados
                 final messages = rawMessages.where((m) {
                   final s = m['sender_id'];
                   final r = m['recipient_id'];
@@ -384,6 +463,11 @@ class _DirectMessagePageState extends State<DirectMessagePage> {
                   return (s == currentUserId && r == recipientId) ||
                       (s == recipientId && r == currentUserId);
                 }).toList();
+
+                if (!snapshot.hasData &&
+                    snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
 
                 WidgetsBinding.instance
                     .addPostFrameCallback((_) => _scrollToBottom());
@@ -394,43 +478,41 @@ class _DirectMessagePageState extends State<DirectMessagePage> {
                   itemBuilder: (context, index) {
                     final m = messages[index];
                     final isMe = m['sender_id'] == currentUserId;
+                    final messageId = m['id'].toString();
 
-                    return ChatBubble(
-                      message: m['content'],
-                      imageUrl: m['image_url'],
-                      isCurrentUser: isMe,
-                      sentAt:
-                          DateTime.parse(m['created_at'] as String).toLocal(),
+                    return GestureDetector(
+                      onTap: () => _showReactionsDialog(messageId),
+                      child: ChatBubble(
+                        message: m['content'],
+                        imageUrl: m['image_url'],
+                        isCurrentUser: isMe,
+                        sentAt:
+                            DateTime.parse(m['created_at'] as String).toLocal(),
+                        reactions: _reactions[messageId] ?? [],
+                      ),
                     );
                   },
                 );
               },
             ),
           ),
-
-          // ---------------- CAMPO DE ENVIO ----------------
           Padding(
             padding: EdgeInsets.only(
               left: 8.0,
               right: 8.0,
-              bottom: MediaQuery.of(context).viewInsets.bottom +
-                  8.0, // Suporte ao teclado
+              bottom: MediaQuery.of(context).viewInsets.bottom + 8.0,
             ),
             child: Row(
               children: [
-                // Botão de enviar imagem
                 IconButton(
                   onPressed: _sendImage,
                   icon: const Icon(Icons.image, color: Colors.white),
                 ),
                 const SizedBox(width: 8),
-
-                // Campo de texto (onChanged ligado ao handleTyping)
                 Expanded(
                   child: TextFormField(
                     controller: _textController,
-                    onChanged:
-                        _handleTyping, // <-- LIGADO AO NOVO HANDLE TYPING
+                    onChanged: _handleTyping,
                     decoration: InputDecoration(
                       hintText: "Digite sua mensagem...",
                       filled: true,
@@ -443,8 +525,6 @@ class _DirectMessagePageState extends State<DirectMessagePage> {
                   ),
                 ),
                 const SizedBox(width: 8),
-
-                // Botão de enviar texto
                 IconButton(
                   onPressed: _isSending ? null : _sendMessage,
                   icon: Icon(
