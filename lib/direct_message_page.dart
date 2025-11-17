@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'main.dart'; // Importe a variável global 'supabase'
-import 'dart:async'; // Necessário para o Timer (debounce)
+import 'main.dart';
+import 'dart:async';
 
 class DirectMessagePage extends StatefulWidget {
   final Map<String, dynamic> recipientProfile;
@@ -21,11 +21,11 @@ class _DirectMessagePageState extends State<DirectMessagePage> {
   final User? currentUser = supabase.auth.currentUser;
   final TextEditingController _messageController = TextEditingController();
 
-  // Variáveis para controle de debounce e status local
+  // Variáveis para debounce e status local
   Timer? _typingTimer;
   bool _isTypingLocally = false;
 
-  // Stream para rastrear o status de digitação do destinatário em tempo real
+  // Stream para rastrear o status de digitação do destinatário
   late final Stream<Map<String, dynamic>> _recipientStatusStream;
 
   @override
@@ -33,15 +33,12 @@ class _DirectMessagePageState extends State<DirectMessagePage> {
     super.initState();
     final recipientId = widget.recipientProfile['id'] as String;
 
-    // SINTAXE CORRIGIDA: Removendo .select() e .limit(1) para evitar o erro.
-    // O stream agora retorna o payload completo da linha do perfil.
+    // Stream configurado para compatibilidade (sem .select() ou .limit(1))
     _recipientStatusStream = supabase
         .from('profiles')
         .stream(primaryKey: ['id'])
         .eq('id', recipientId)
         .map((dataList) {
-          // O Supabase Realtime retorna uma lista de dados (dataList).
-          // Retornamos o primeiro item, que contém os campos 'is_online' e 'is_typing'.
           if (dataList.isNotEmpty) {
             return dataList.first;
           }
@@ -64,23 +61,29 @@ class _DirectMessagePageState extends State<DirectMessagePage> {
     }
   }
 
-  // LÓGICA DE DEBOUNCE
+  // LÓGICA DE DEBOUNCE CORRIGIDA: Mantém o status TRUE se houver texto.
   void _handleTyping(String text) {
-    if (text.trim().isNotEmpty) {
-      // 1. Seta o status para TRUE imediatamente
+    final currentText = text.trim();
+
+    if (currentText.isNotEmpty) {
+      // 1. Enquanto houver texto, sempre seta/mantém o status TRUE.
       _setIsTyping(true);
 
-      // 2. Reseta o timer (debounce)
+      // 2. Reseta o timer
       if (_typingTimer?.isActive ?? false) {
         _typingTimer!.cancel();
       }
 
-      // 3. Cria um novo timer: se expirar (1.5s), seta o status para FALSE
+      // 3. O timer é reiniciado: Ele só limpará o status se o campo estiver vazio
+      // na hora que o timer expirar (indicando que o usuário apagou tudo depois de parar de digitar).
       _typingTimer = Timer(const Duration(milliseconds: 1500), () {
-        _setIsTyping(false);
+        if (_messageController.text.trim().isEmpty) {
+          _setIsTyping(false);
+        }
+        // Se houver texto, não faz nada (mantém is_typing: true)
       });
     } else {
-      // Campo vazio, seta imediatamente para FALSE e cancela o timer
+      // Se o usuário apagou todo o texto, limpa o status imediatamente
       _setIsTyping(false);
       _typingTimer?.cancel();
     }
@@ -94,7 +97,7 @@ class _DirectMessagePageState extends State<DirectMessagePage> {
 
     _messageController.clear();
 
-    // Importante: Reseta o status de digitação para FALSE após o envio
+    // Reseta o status de digitação para FALSE após o envio
     _setIsTyping(false);
     _typingTimer?.cancel();
   }
@@ -114,67 +117,73 @@ class _DirectMessagePageState extends State<DirectMessagePage> {
 
     return Scaffold(
       appBar: AppBar(
-        leading: Padding(
-          padding: const EdgeInsets.all(8.0),
-          child: CircleAvatar(
-            backgroundColor: Colors.blueGrey.shade700,
-            backgroundImage: widget.recipientProfile['avatar_url'] != null &&
-                    widget.recipientProfile['avatar_url'].isNotEmpty
-                ? NetworkImage(widget.recipientProfile['avatar_url'])
-                : null,
-            child: (widget.recipientProfile['avatar_url'] == null ||
-                    widget.recipientProfile['avatar_url'].isEmpty)
-                ? const Icon(Icons.person, size: 20, color: Colors.white70)
-                : null,
-          ),
-        ),
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        // Deixando o 'leading' padrão para que o botão de voltar apareça.
+
+        title: Row(
+          // Usamos Row no 'title' para organizar Avatar, Nome e Status.
           children: [
-            Text(recipientName,
-                style:
-                    const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            // Avatar
+            Padding(
+              padding: const EdgeInsets.only(right: 8.0),
+              child: CircleAvatar(
+                backgroundColor: Colors.blueGrey.shade700,
+                backgroundImage:
+                    widget.recipientProfile['avatar_url'] != null &&
+                            widget.recipientProfile['avatar_url'].isNotEmpty
+                        ? NetworkImage(widget.recipientProfile['avatar_url'])
+                        : null,
+                child: (widget.recipientProfile['avatar_url'] == null ||
+                        widget.recipientProfile['avatar_url'].isEmpty)
+                    ? const Icon(Icons.person, size: 20, color: Colors.white70)
+                    : null,
+              ),
+            ),
 
-            // StreamBuilder para exibir o status em tempo real
-            StreamBuilder<Map<String, dynamic>>(
-              stream: _recipientStatusStream,
-              initialData: {
-                // Pega o status inicial do perfil para o primeiro estado
-                'is_online': widget.recipientProfile['is_online'] ?? false,
-                'is_typing': widget.isRecipientTyping
-              },
-              builder: (context, snapshot) {
-                // Se o dado do stream for nulo, usa os dados iniciais
-                final data = snapshot.data ?? {};
+            // Nome e Status
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(recipientName,
+                    style: const TextStyle(
+                        fontSize: 18, fontWeight: FontWeight.bold)),
 
-                // Os campos agora são acessados diretamente do mapa retornado pelo stream
-                final bool isOnline = data['is_online'] == true;
-                final bool isTyping = data['is_typing'] == true;
+                // StreamBuilder para exibir o status em tempo real
+                StreamBuilder<Map<String, dynamic>>(
+                  stream: _recipientStatusStream,
+                  initialData: {
+                    'is_online': widget.recipientProfile['is_online'] ?? false,
+                    'is_typing': widget.isRecipientTyping
+                  },
+                  builder: (context, snapshot) {
+                    final data = snapshot.data ?? {};
+                    final bool isOnline = data['is_online'] == true;
+                    final bool isTyping = data['is_typing'] == true;
 
-                String statusText;
-                Color statusColor;
+                    String statusText;
+                    Color statusColor;
 
-                // Lógica de prioridade de status: Digitanto > Online > Offline
-                if (isTyping) {
-                  statusText = 'Digitando...';
-                  statusColor = Colors.lightBlueAccent;
-                } else if (isOnline) {
-                  statusText = 'Online agora';
-                  statusColor = Colors.greenAccent;
-                } else {
-                  statusText = 'Offline';
-                  statusColor = Colors.grey;
-                }
+                    if (isTyping) {
+                      statusText = 'Digitando...';
+                      statusColor = Colors.lightBlueAccent;
+                    } else if (isOnline) {
+                      statusText = 'Online agora';
+                      statusColor = Colors.greenAccent;
+                    } else {
+                      statusText = 'Offline';
+                      statusColor = Colors.grey;
+                    }
 
-                return Text(
-                  statusText,
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: statusColor,
-                    fontWeight: FontWeight.normal,
-                  ),
-                );
-              },
+                    return Text(
+                      statusText,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: statusColor,
+                        fontWeight: FontWeight.normal,
+                      ),
+                    );
+                  },
+                ),
+              ],
             ),
           ],
         ),
@@ -187,7 +196,6 @@ class _DirectMessagePageState extends State<DirectMessagePage> {
 
       // Campo de texto com a lógica de digitação (debounce)
       bottomNavigationBar: Padding(
-        // Adiciona um padding para considerar o teclado na navegação
         padding: EdgeInsets.only(
           left: 8.0,
           right: 8.0,
@@ -198,7 +206,7 @@ class _DirectMessagePageState extends State<DirectMessagePage> {
             Expanded(
               child: TextFormField(
                 controller: _messageController,
-                onChanged: _handleTyping, // Chama a função de debounce
+                onChanged: _handleTyping, // Chama a função de debounce ajustada
                 decoration: InputDecoration(
                   hintText: 'Digite uma mensagem...',
                   border: OutlineInputBorder(
