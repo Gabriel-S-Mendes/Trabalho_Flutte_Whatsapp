@@ -39,6 +39,38 @@ class _GroupChatPageState extends State<GroupChatPage> {
         .order('created_at', ascending: true);
 
     _loadUsernames();
+    _listenReactions();
+  }
+
+  // 🔥 LISTENER DE REAÇÕES EM TEMPO REAL
+  void _listenReactions() {
+    supabase
+        .from('group_reactions')
+        .stream(primaryKey: ['id'])
+        .listen((event) {
+      _syncReactions();
+    });
+
+    _syncReactions();
+  }
+
+  // 🔥 Carregar reações do banco
+  Future<void> _syncReactions() async {
+    final resp = await supabase.from('group_reactions').select();
+
+    final Map<String, List<String>> newMap = {};
+
+    for (final r in resp) {
+      final messageId = r['message_id'];
+      final emoji = r['emoji'];
+
+      newMap.putIfAbsent(messageId, () => []);
+      newMap[messageId]!.add(emoji);
+    }
+
+    setState(() => _reactions
+      ..clear()
+      ..addAll(newMap));
   }
 
   Future<void> _loadUsernames() async {
@@ -73,7 +105,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
     }
   }
 
-  // 🔥 NOVO MÉTODO — IGUAL AO DO DIRECT MESSAGE PAGE
+  // 🔥 Enviar imagem
   Future<void> _pickAndSendImage() async {
     final XFile? picked =
         await _picker.pickImage(source: ImageSource.gallery, imageQuality: 70);
@@ -97,7 +129,6 @@ class _GroupChatPageState extends State<GroupChatPage> {
           supabase.storage.from('chat-images').getPublicUrl(fileName);
 
       await _sendMessage(imageUrl: imageUrl);
-
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text("Erro ao enviar imagem: $e")));
@@ -106,22 +137,26 @@ class _GroupChatPageState extends State<GroupChatPage> {
     }
   }
 
+  // 🔥 APENAS UMA REAÇÃO POR USUÁRIO
   void _addReaction(String messageId, String emoji) async {
-    final reactionsList = _reactions[messageId] ?? [];
-    reactionsList.add(emoji);
-
-    setState(() {
-      _reactions[messageId] = reactionsList;
-    });
+    final userId = supabase.auth.currentUser!.id;
 
     try {
+      // Remove qualquer reação anterior desse usuário nessa mensagem
+      await supabase
+          .from('group_reactions')
+          .delete()
+          .eq('message_id', messageId)
+          .eq('user_id', userId);
+
+      // Insere a nova reação
       await supabase.from('group_reactions').insert({
         'message_id': messageId,
-        'user_id': supabase.auth.currentUser!.id,
+        'user_id': userId,
         'emoji': emoji,
       });
     } catch (e) {
-      print('Erro ao salvar reação: $e');
+      print("Erro ao salvar reação: $e");
     }
   }
 
@@ -215,8 +250,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
                   ),
                 ),
                 IconButton(
-                  icon:
-                      const Icon(Icons.send, color: Colors.green),
+                  icon: const Icon(Icons.send, color: Colors.green),
                   onPressed: _isSending ? null : _sendMessage,
                 ),
               ],
