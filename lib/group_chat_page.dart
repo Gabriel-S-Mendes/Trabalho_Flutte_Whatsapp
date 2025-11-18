@@ -22,7 +22,8 @@ class _GroupChatPageState extends State<GroupChatPage> {
   final _messageController = TextEditingController();
   late final Stream<List<Map<String, dynamic>>> _messagesStream;
 
-  final Map<String, String> _usernames = {};
+  // Mapa para armazenar ID do usuário -> Nome de exibição (name_account)
+  final Map<String, String> _usernames = {}; 
   final Map<String, List<String>> _reactions = {};
   final ImagePicker _picker = ImagePicker();
 
@@ -42,7 +43,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
     _listenReactions();
   }
 
-  // 🔥 STREAM DE REAÇÕES
+  // 🔥 STREAM DE REAÇÕES (Sem alteração)
   void _listenReactions() {
     supabase
         .from('group_reactions')
@@ -72,11 +73,13 @@ class _GroupChatPageState extends State<GroupChatPage> {
       ..addAll(newMap));
   }
 
+  // 🎯 CORREÇÃO 1: Carregar 'name_account' e usar 'username' como fallback
   Future<void> _loadUsernames() async {
-    final profiles = await supabase.from('profiles').select('id, username');
+    final profiles = await supabase.from('profiles').select('id, name_account, username');
 
     for (final p in profiles) {
-      _usernames[p['id']] = p['username'] ?? 'Desconhecido';
+      final String displayName = p['name_account'] ?? p['username'] ?? 'Desconhecido';
+      _usernames[p['id']] = displayName;
     }
 
     if (mounted) setState(() {});
@@ -104,7 +107,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
     }
   }
 
-  // 🔥 ENVIO DE IMAGEM
+  // 🔥 ENVIO DE IMAGEM (Sem alteração)
   Future<void> _pickAndSendImage() async {
     final XFile? picked =
         await _picker.pickImage(source: ImageSource.gallery, imageQuality: 70);
@@ -136,7 +139,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
     }
   }
 
-  // 🔥 SOMENTE UMA REAÇÃO POR USUÁRIO
+  // 🔥 SOMENTE UMA REAÇÃO POR USUÁRIO (Sem alteração)
   void _addReaction(String messageId, String emoji) async {
     final userId = supabase.auth.currentUser!.id;
 
@@ -190,21 +193,29 @@ class _GroupChatPageState extends State<GroupChatPage> {
 
       final List memList = members as List? ?? [];
 
-      // Buscar usernames
+      // Buscar name_account
       List<Map<String, dynamic>> detailed = [];
 
       for (final m in memList) {
         final userId = m['user_id'];
 
+        // 🎯 CORREÇÃO 2: Buscar 'name_account' e 'username'
         final profile = await supabase
             .from('profiles')
-            .select('username')
+            .select('name_account, username') 
             .eq('id', userId)
             .maybeSingle();
+        
+        // Define o nome de exibição: name_account ou username(email) como fallback
+        final String displayName = 
+          profile?['name_account'] as String? ?? 
+          profile?['username'] as String? ?? 
+          'Desconhecido';
 
         detailed.add({
           'user_id': userId,
-          'username': profile?['username'] ?? 'Desconhecido',
+          // 🎯 CORREÇÃO 3: Usar o nome de exibição
+          'display_name': displayName, 
         });
       }
 
@@ -219,11 +230,16 @@ class _GroupChatPageState extends State<GroupChatPage> {
               itemCount: detailed.length,
               itemBuilder: (_, i) {
                 final m = detailed[i];
+                final String name = m['display_name'] as String;
+                final String firstLetter = name.isNotEmpty ? name[0].toUpperCase() : '?';
+
                 return ListTile(
                   leading: CircleAvatar(
-                    child: Text(m['username'][0].toUpperCase()),
+                    // 🎯 CORREÇÃO 4: Usar a primeira letra do nome de exibição
+                    child: Text(firstLetter), 
                   ),
-                  title: Text(m['username']),
+                  // 🎯 CORREÇÃO 5: Exibir o nome de exibição
+                  title: Text(name), 
                   subtitle: Text(m['user_id']),
                 );
               },
@@ -276,6 +292,8 @@ class _GroupChatPageState extends State<GroupChatPage> {
                   itemBuilder: (context, index) {
                     final msg = messages[messages.length - 1 - index];
                     final isMe = msg['sender_id'] == myId;
+                    
+                    // O `_usernames` agora contém o `name_account`
                     final username =
                         _usernames[msg['sender_id']] ?? 'Carregando...';
                     final messageId = msg['id'].toString();
@@ -334,7 +352,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
 class _GroupBubble extends StatelessWidget {
   final String? message;
   final String? imageUrl;
-  final String username;
+  final String username; // Já está correto, pois recebe o dado de _usernames
   final bool isMe;
   final List<String> reactions;
 
@@ -356,10 +374,10 @@ class _GroupBubble extends StatelessWidget {
         decoration: BoxDecoration(
           color: isMe ? Colors.green[200] : Colors.grey[300],
           borderRadius: BorderRadius.only(
-            topLeft: Radius.circular(12),
-            topRight: Radius.circular(12),
-            bottomLeft: isMe ? Radius.circular(12) : Radius.zero,
-            bottomRight: isMe ? Radius.zero : Radius.circular(12),
+            topLeft: const Radius.circular(12),
+            topRight: const Radius.circular(12),
+            bottomLeft: isMe ? const Radius.circular(12) : Radius.zero,
+            bottomRight: isMe ? Radius.zero : const Radius.circular(12),
           ),
         ),
         constraints:
