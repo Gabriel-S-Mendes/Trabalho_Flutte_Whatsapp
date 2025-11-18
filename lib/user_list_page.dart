@@ -43,6 +43,19 @@ class UserListPageState extends State<UserListPage>
   // Mapa para rastrear is_online e is_typing: {user_id: {'online': true/false, 'typing': true/false}}
   Map<String, Map<String, bool>> _userStatusMap = {};
 
+  // ===========================================
+  // CORES PARA O TEMA ESCURO (DARK MODE)
+  // O fundo #1E1E1E é o "cinza escuro" que pedimos.
+  // ===========================================
+  static const Color darkBackgroundColor = Color(
+      0xFF1E1E1E); // Fundo Cinza Escuro (IDÊNTICO AO QUE VOCÊ DEVE TER NA TELA DE LOGIN)
+  static const Color searchBarColor =
+      Color(0xFF2C2C2C); // Um pouco mais claro para a barra
+  static const Color lightTextColor = Colors.white;
+  static final Color subtleTextColor = Colors.grey.shade400;
+  // Cor de Avatar de Usuário (substituiu o azul vibrante)
+  static final Color userAvatarColor = Colors.indigo.shade400;
+
   @override
   void initState() {
     super.initState();
@@ -122,8 +135,8 @@ class UserListPageState extends State<UserListPage>
     // 1. FETCH DOS PERFIS (Usuários)
     final profilesData = await supabase
         .from('profiles')
-        // 🎯 CORREÇÃO 1: Incluindo 'name_account' no select
-        .select('*, is_online, is_typing, name_account') 
+        // Incluindo 'name_account' no select
+        .select('*, is_online, is_typing, name_account')
         .neq('id', currentUserId)
         .order('name_account', ascending: true); // Ordenando pelo nome da conta
 
@@ -134,9 +147,11 @@ class UserListPageState extends State<UserListPage>
 
       // Inicializa o mapa de status
       _userStatusMap[userId] = {'online': isOnline, 'typing': isTyping};
-      
-      // 🎯 CORREÇÃO 2: Usando 'name_account' como título. Fallback para 'username' (email)
-      final String displayName = user['name_account'] as String? ?? user['username'] as String? ?? 'Usuário Sem Nome';
+
+      // Usando 'name_account' como título. Fallback para 'username' (email)
+      final String displayName = user['name_account'] as String? ??
+          user['username'] as String? ??
+          'Usuário Sem Nome';
 
       return ChatItem(
         id: userId,
@@ -147,7 +162,7 @@ class UserListPageState extends State<UserListPage>
       );
     }).toList();
 
-    // 2. FETCH DOS GRUPOS (RPC) - (Mantido o código original)
+    // 2. FETCH DOS GRUPOS (RPC)
     final groupsData = await supabase.rpc(
       'get_user_groups',
       params: {
@@ -189,178 +204,194 @@ class UserListPageState extends State<UserListPage>
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.all(12.0),
-          child: TextFormField(
-            controller: _searchController,
-            decoration: InputDecoration(
-              hintText: 'Buscar por nome de usuário ou grupo...',
-              prefixIcon: const Icon(Icons.search),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(25.0),
-                borderSide: BorderSide.none,
+    return Container(
+      color: darkBackgroundColor, // Fundo Cinza Escuro
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(12.0),
+            child: TextFormField(
+              controller: _searchController,
+              style: const TextStyle(
+                  color: lightTextColor), // Texto digitado claro
+              decoration: InputDecoration(
+                hintText: 'Buscar por nome de usuário ou grupo...',
+                hintStyle: TextStyle(color: subtleTextColor), // Hint text claro
+                prefixIcon: Icon(Icons.search, color: subtleTextColor),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(25.0),
+                  borderSide: BorderSide.none,
+                ),
+                filled: true,
+                fillColor:
+                    searchBarColor, // Fundo da barra de busca cinza médio
+                contentPadding:
+                    const EdgeInsets.symmetric(vertical: 10, horizontal: 20),
               ),
-              filled: true,
-              fillColor: Colors.grey.shade800,
-              contentPadding:
-                  const EdgeInsets.symmetric(vertical: 10, horizontal: 20),
             ),
           ),
-        ),
-        Expanded(
-          child: StreamBuilder<List<Map<String, dynamic>>>(
-            stream: _onlineStatusStream,
-            builder: (context, streamSnapshot) {
-              return FutureBuilder<List<ChatItem>>(
-                future: _combinedFuture,
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
+          Expanded(
+            child: StreamBuilder<List<Map<String, dynamic>>>(
+              stream: _onlineStatusStream,
+              builder: (context, streamSnapshot) {
+                return FutureBuilder<List<ChatItem>>(
+                  future: _combinedFuture,
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(
+                          child: CircularProgressIndicator(
+                              color: Colors.blueAccent));
+                    }
 
-                  if (snapshot.hasError) {
-                    return Center(
-                        child: Text(
-                            'Erro ao carregar contatos: ${snapshot.error}',
-                            style: const TextStyle(color: Colors.redAccent)));
-                  }
+                    if (snapshot.hasError) {
+                      return Center(
+                          child: Text(
+                              'Erro ao carregar contatos: ${snapshot.error}',
+                              style: const TextStyle(color: Colors.redAccent)));
+                    }
 
-                  final rawItems = snapshot.data ?? [];
-                  final filteredItems = rawItems.where((item) {
-                    final name = item.title.toLowerCase();
-                    return name.contains(_searchTerm);
-                  }).toList();
+                    final rawItems = snapshot.data ?? [];
+                    final filteredItems = rawItems.where((item) {
+                      final name = item.title.toLowerCase();
+                      return name.contains(_searchTerm);
+                    }).toList();
 
-                  final items = filteredItems;
+                    final items = filteredItems;
 
-                  if (items.isEmpty) {
-                    return Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(30.0),
-                        child: Text(
-                          _searchTerm.isNotEmpty
-                              ? 'Nenhum usuário ou grupo encontrado com o nome "$_searchTerm".'
-                              : 'Nenhum contato ou grupo cadastrado.',
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(color: Colors.grey),
+                    if (items.isEmpty) {
+                      return Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(30.0),
+                          child: Text(
+                            _searchTerm.isNotEmpty
+                                ? 'Nenhum usuário ou grupo encontrado com o nome "$_searchTerm".'
+                                : 'Nenhum contato ou grupo cadastrado.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: subtleTextColor),
+                          ),
                         ),
-                      ),
-                    );
-                  }
+                      );
+                    }
 
-                  return ListView.builder(
-                    itemCount: items.length,
-                    itemBuilder: (context, index) {
-                      final item = items[index];
+                    return ListView.builder(
+                      itemCount: items.length,
+                      itemBuilder: (context, index) {
+                        final item = items[index];
 
-                      final IconData leadingIcon =
-                          item.isGroup ? Icons.people : Icons.person;
-                      final Color avatarColor = item.isGroup
-                          ? Colors.green.shade700
-                          : Colors.blueGrey.shade700;
+                        final IconData leadingIcon =
+                            item.isGroup ? Icons.people : Icons.person;
+                        final Color avatarColor = item.isGroup
+                            ? Colors.green.shade700
+                            : userAvatarColor; // Cor de Avatar de Usuário (Subtil)
 
-                      final Map<String, bool> status =
-                          _userStatusMap[item.id] ??
-                              {'online': false, 'typing': false};
+                        final Map<String, bool> status =
+                            _userStatusMap[item.id] ??
+                                {'online': false, 'typing': false};
 
-                      final bool isOnline =
-                          !item.isGroup && status['online'] == true;
-                      final bool isTyping =
-                          !item.isGroup && status['typing'] == true;
+                        final bool isOnline =
+                            !item.isGroup && status['online'] == true;
+                        final bool isTyping =
+                            !item.isGroup && status['typing'] == true;
 
-                      // Determina o Subtitle
-                      String subtitleText;
-                      Color subtitleColor;
+                        // Determina o Subtitle
+                        String subtitleText;
+                        Color subtitleColor;
 
-                      if (item.isGroup) {
-                        subtitleText = 'Grupo';
-                        subtitleColor = Colors.greenAccent;
-                      } else if (isTyping) {
-                        subtitleText = 'Digitando...';
-                        subtitleColor = Colors.lightBlueAccent;
-                      } else if (isOnline) {
-                        subtitleText = 'Online agora';
-                        subtitleColor = Colors.grey;
-                      } else {
-                        subtitleText = 'Toque para iniciar a conversa';
-                        subtitleColor = Colors.grey;
-                      }
+                        if (item.isGroup) {
+                          subtitleText = 'Grupo';
+                          subtitleColor = Colors.greenAccent;
+                        } else if (isTyping) {
+                          subtitleText = 'Digitando...';
+                          subtitleColor = Colors.lightBlueAccent;
+                        } else if (isOnline) {
+                          subtitleText = 'Online agora';
+                          subtitleColor = Colors
+                              .greenAccent; // Mais visível no fundo escuro
+                        } else {
+                          subtitleText = 'Toque para iniciar a conversa';
+                          subtitleColor = subtleTextColor;
+                        }
 
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 0, vertical: 2),
-                        child: ListTile(
-                          tileColor: Colors.transparent,
-                          leading: Stack(
-                            children: [
-                              CircleAvatar(
-                                radius: 28,
-                                backgroundColor: avatarColor,
-                                backgroundImage: item.avatarUrl != null &&
-                                        item.avatarUrl!.isNotEmpty
-                                    ? NetworkImage(item.avatarUrl!)
-                                    : null,
-                                child: (item.avatarUrl == null ||
-                                        item.avatarUrl!.isEmpty)
-                                    ? Icon(leadingIcon,
-                                        size: 30, color: Colors.white70)
-                                    : null,
-                              ),
-                              // Indicador de status online
-                              if (isOnline)
-                                Positioned(
-                                  right: 0,
-                                  bottom: 0,
-                                  child: Container(
-                                    width: 15,
-                                    height: 15,
-                                    decoration: BoxDecoration(
-                                      color: Colors.greenAccent,
-                                      shape: BoxShape.circle,
-                                      border: Border.all(
-                                          color: Colors.black, width: 2),
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 0, vertical: 2),
+                          child: ListTile(
+                            tileColor: Colors
+                                .transparent, // Deixa transparente para usar o fundo escuro
+                            leading: Stack(
+                              children: [
+                                CircleAvatar(
+                                  radius: 28,
+                                  backgroundColor: avatarColor,
+                                  backgroundImage: item.avatarUrl != null &&
+                                          item.avatarUrl!.isNotEmpty
+                                      ? NetworkImage(item.avatarUrl!)
+                                      : null,
+                                  child: (item.avatarUrl == null ||
+                                          item.avatarUrl!.isEmpty)
+                                      ? Icon(leadingIcon,
+                                          size: 30, color: Colors.white)
+                                      : null,
+                                ),
+                                // Indicador de status online
+                                if (isOnline)
+                                  Positioned(
+                                    right: 0,
+                                    bottom: 0,
+                                    child: Container(
+                                      width: 15,
+                                      height: 15,
+                                      decoration: BoxDecoration(
+                                        color: Colors.greenAccent,
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                            color: darkBackgroundColor,
+                                            width:
+                                                2), // Borda escura para contraste
+                                      ),
                                     ),
                                   ),
-                                ),
-                            ],
-                          ),
-                          // O título já é o name_account/username graças à correção no _fetchCombinedItems
-                          title: Text(item.title, 
-                              style: const TextStyle(
-                                  fontWeight: FontWeight.bold, fontSize: 18)),
-                          subtitle: Text(
-                            subtitleText,
-                            style: TextStyle(color: subtitleColor),
-                          ),
-                          trailing: const Icon(Icons.arrow_forward_ios,
-                              size: 16, color: Colors.grey),
-                          onTap: () {
-                            final Widget targetPage = item.isGroup
-                                ? GroupChatPage(
+                              ],
+                            ),
+                            // O título já é o name_account/username
+                            title: Text(item.title,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 18,
+                                    color:
+                                        lightTextColor)), // Texto Principal Branco
+                            subtitle: Text(
+                              subtitleText,
+                              style: TextStyle(color: subtitleColor),
+                            ),
+                            trailing: Icon(Icons.arrow_forward_ios,
+                                size: 16, color: subtleTextColor),
+                            onTap: () {
+                              final Widget targetPage = item.isGroup
+                                  ? GroupChatPage(
                                       groupId: item.id, groupName: item.title)
-                                : DirectMessagePage(
+                                  : DirectMessagePage(
                                       recipientProfile: item.data,
                                       // Passa o status inicial para evitar lag
                                       isRecipientTyping: isTyping,
                                     );
 
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                  builder: (context) => targetPage),
-                            );
-                          },
-                        ),
-                      );
-                    },
-                  );
-                },
-              );
-            },
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                    builder: (context) => targetPage),
+                              );
+                            },
+                          ),
+                        );
+                      },
+                    );
+                  },
+                );
+              },
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }

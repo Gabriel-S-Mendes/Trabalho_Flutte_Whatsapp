@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'home_page.dart';
-import 'main.dart'; // supabase client
+import 'main.dart'; // cliente supabase
 
 class SignUpPage extends StatefulWidget {
   const SignUpPage({super.key});
@@ -19,16 +19,29 @@ class _SignUpPageState extends State<SignUpPage> {
   final _formKey = GlobalKey<FormState>();
   bool _isLoading = false;
 
+  // ===========================================
+  // CORES DO TEMA UNIFICADO
+  // ===========================================
+  // Cor de Destaque (AppBar e Botões)
+  static const Color primaryHighlightColor = Color(0xFF00A38E);
+  // Fundo principal (Scaffold)
+  static const Color darkBackgroundColor = Color(0xFF1E1E1E);
+  // Fundo do Card (levemente mais claro que o fundo)
+  static const Color cardBackgroundColor = Color(0xFF2C2C2C);
+  // Cor do texto claro
+  static const Color lightTextColor = Colors.white;
+
   // =============================
-  // Cadastro
+  // Cadastro (Sign Up) - LÓGICA ORIGINAL
   // =============================
   Future<void> _signUp() async {
+    // 1. Validar os campos do formulário
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isLoading = true);
 
     try {
-      // 1. Criar usuário
+      // 2. Criar usuário (Supabase Auth)
       final AuthResponse res = await supabase.auth.signUp(
         email: _emailController.text.trim(),
         password: _passwordController.text.trim(),
@@ -37,35 +50,38 @@ class _SignUpPageState extends State<SignUpPage> {
       final user = res.user;
       final session = res.session;
 
-      if (user == null || session == null) {
-        // Email confirmation necessária
+      // Se a sessão for nula, a confirmação por e-mail é necessária
+      if (user != null && session == null) {
+        // Confirmação de e-mail necessária
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text(
-              "Verifique seu email para confirmar o cadastro."),
+          content: Text("Verifique seu e-mail para confirmar o cadastro."),
           backgroundColor: Colors.orange,
         ));
-        if (mounted) Navigator.pop(context);
+        if (mounted) Navigator.pop(context); // Volta para a tela anterior
         return;
       }
 
-      // 2. Criar perfil no DB (sem avatar_url)
-      await supabase.from('profiles').upsert({
-        'id': user.id,
-        'username': _usernameController.text.trim(),
-        // 'avatar_url' foi removido
-      });
+      // Se a sessão estiver presente, o usuário fez login imediatamente
+      if (user != null && session != null) {
+        // 3. Criar perfil no DB (tabela 'profiles') - USANDO 'username' COMO NO ORIGINAL
+        await supabase.from('profiles').upsert({
+          'id': user.id,
+          'username': _usernameController.text.trim(),
+          // 'avatar_url' foi removido
+        });
 
-      // 3. Navegar
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Cadastro realizado com sucesso!'),
-          backgroundColor: Colors.green,
-        ));
+        // 4. Navegar para a HomePage
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Cadastro realizado com sucesso!'),
+            backgroundColor: Colors.green,
+          ));
 
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => const HomePage()),
-        );
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (_) => const HomePage()),
+          );
+        }
       }
     } on AuthException catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -87,63 +103,159 @@ class _SignUpPageState extends State<SignUpPage> {
   }
 
   // =============================
-  // UI
+  // UI - DESIGN DARK MODE
   // =============================
+
+  // Estilo de borda para os campos de texto
+  OutlineInputBorder _inputBorder(Color color) {
+    return OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: BorderSide(color: color, width: 1.5),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Criar Conta')),
+      // Fundo principal escuro
+      backgroundColor: darkBackgroundColor,
+
+      appBar: AppBar(
+        title: const Text('Criar Conta'),
+        // AppBar Verde-Água
+        backgroundColor: primaryHighlightColor,
+        foregroundColor: lightTextColor,
+      ),
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              children: [
-                const Text('Cadastro Completo',
-                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 32),
-
-                // Elementos da foto de perfil removidos aqui
-
-                TextFormField(
-                  controller: _usernameController,
-                  decoration: const InputDecoration(labelText: 'Nome de Usuário'),
-                  validator: (v) => v == null || v.length < 3
-                      ? 'Mínimo de 3 caracteres'
-                      : null,
-                ),
-
-                const SizedBox(height: 16),
-
-                TextFormField(
-                  controller: _emailController,
-                  decoration: const InputDecoration(labelText: 'Email'),
-                  validator: (v) => v == null || !v.contains("@")
-                      ? 'Email inválido'
-                      : null,
-                ),
-
-                const SizedBox(height: 16),
-
-                TextFormField(
-                  controller: _passwordController,
-                  decoration: const InputDecoration(labelText: 'Senha'),
-                  obscureText: true,
-                  validator: (v) => v == null || v.length < 6
-                      ? 'Mínimo 6 caracteres'
-                      : null,
-                ),
-
-                const SizedBox(height: 24),
-
-                _isLoading
-                    ? const CircularProgressIndicator()
-                    : ElevatedButton(
-                        onPressed: _signUp,
-                        child: const Text('Cadastrar e Entrar'),
+          // Card em um cinza mais claro para destaque
+          child: Card(
+            color: cardBackgroundColor,
+            elevation: 10,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: const BorderSide(
+                  color: primaryHighlightColor,
+                  width: 1), // Borda sutil de destaque
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(32.0),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Crie Sua Conta',
+                      style: TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.w800,
+                        color: primaryHighlightColor, // Título Verde-Água
                       ),
-              ],
+                    ),
+                    const SizedBox(height: 32),
+
+                    // Campo Nome de Usuário
+                    TextFormField(
+                      controller: _usernameController,
+                      keyboardType: TextInputType.text,
+                      style: const TextStyle(
+                          color: lightTextColor), // Texto digitado branco
+                      decoration: InputDecoration(
+                        labelText: 'Nome de Usuário',
+                        labelStyle: const TextStyle(color: Colors.grey),
+                        prefixIcon: const Icon(Icons.person,
+                            color: primaryHighlightColor),
+                        border: _inputBorder(Colors.grey.shade600),
+                        enabledBorder: _inputBorder(Colors.grey.shade700),
+                        focusedBorder: _inputBorder(primaryHighlightColor),
+                        contentPadding: const EdgeInsets.symmetric(
+                            vertical: 16.0, horizontal: 16.0),
+                      ),
+                      validator: (v) => v == null || v.length < 3
+                          ? 'Mínimo de 3 caracteres'
+                          : null,
+                    ),
+
+                    const SizedBox(height: 16),
+
+                    // Campo E-mail
+                    TextFormField(
+                      controller: _emailController,
+                      keyboardType: TextInputType.emailAddress,
+                      style: const TextStyle(
+                          color: lightTextColor), // Texto digitado branco
+                      decoration: InputDecoration(
+                        labelText: 'E-mail',
+                        labelStyle: const TextStyle(color: Colors.grey),
+                        prefixIcon: const Icon(Icons.email,
+                            color: primaryHighlightColor),
+                        border: _inputBorder(Colors.grey.shade600),
+                        enabledBorder: _inputBorder(Colors.grey.shade700),
+                        focusedBorder: _inputBorder(primaryHighlightColor),
+                        contentPadding: const EdgeInsets.symmetric(
+                            vertical: 16.0, horizontal: 16.0),
+                      ),
+                      validator: (v) => v == null || !v.contains("@")
+                          ? 'E-mail inválido'
+                          : null,
+                    ),
+
+                    const SizedBox(height: 16),
+
+                    // Campo Senha
+                    TextFormField(
+                      controller: _passwordController,
+                      style: const TextStyle(
+                          color: lightTextColor), // Texto digitado branco
+                      decoration: InputDecoration(
+                        labelText: 'Senha',
+                        labelStyle: const TextStyle(color: Colors.grey),
+                        prefixIcon: const Icon(Icons.lock,
+                            color: primaryHighlightColor),
+                        border: _inputBorder(Colors.grey.shade600),
+                        enabledBorder: _inputBorder(Colors.grey.shade700),
+                        focusedBorder: _inputBorder(primaryHighlightColor),
+                        contentPadding: const EdgeInsets.symmetric(
+                            vertical: 16.0, horizontal: 16.0),
+                      ),
+                      obscureText: true,
+                      validator: (v) => v == null || v.length < 6
+                          ? 'Mínimo 6 caracteres'
+                          : null,
+                    ),
+
+                    const SizedBox(height: 32),
+
+                    _isLoading
+                        ? const CircularProgressIndicator(
+                            color: primaryHighlightColor)
+                        : SizedBox(
+                            width: double.infinity, // Botão de largura total
+                            child: ElevatedButton(
+                              onPressed: _signUp,
+                              style: ElevatedButton.styleFrom(
+                                // Botão Verde-Água
+                                backgroundColor: primaryHighlightColor,
+                                foregroundColor: lightTextColor,
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 16),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                elevation: 5,
+                              ),
+                              child: const Text(
+                                'Cadastrar e Entrar',
+                                style: TextStyle(
+                                    fontSize: 18, fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                          ),
+                  ],
+                ),
+              ),
             ),
           ),
         ),

@@ -124,7 +124,7 @@ class _ProfilePageState extends State<ProfilePage> {
     setState(() => _isLoading = true);
 
     try {
-      // LER O ARQUIVO COMO BYTES
+      // LER O ARQUIVO COMO BYTES - ESSENCIAL PARA WEB/DESKTOP
       final bytes = await pickedFile.readAsBytes();
       final fileExtension = pickedFile.name.split('.').last;
       final mimeType = pickedFile.mimeType ?? 'image/jpeg';
@@ -132,7 +132,7 @@ class _ProfilePageState extends State<ProfilePage> {
       final fileName =
           '${currentUser!.id}/${DateTime.now().millisecondsSinceEpoch}.$fileExtension';
 
-      // 1. UPLOAD para o Storage
+      // 1. UPLOAD para o Storage usando uploadBinary (para Uint8List/bytes)
       await supabase.storage.from('avatars').uploadBinary(
             fileName,
             bytes,
@@ -191,15 +191,25 @@ class _ProfilePageState extends State<ProfilePage> {
       );
     }
 
-    if (_isLoading || _profileData == null) {
+    // Se estiver carregando os dados do perfil pela primeira vez ou após uma atualização
+    if (_isLoading && _profileData == null) {
       return Scaffold(
         appBar: AppBar(title: const Text('Meu Perfil')),
         body: const Center(child: CircularProgressIndicator()),
       );
     }
 
+    // Se o perfil for nulo após o carregamento (deveria ser raro com .single())
+    if (_profileData == null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Meu Perfil')),
+        body: const Center(child: Text('Dados do perfil não encontrados.')),
+      );
+    }
+
     final avatarUrl = _profileData!['avatar_url'];
-    final accountName = _profileData!['name_account'] ?? 'Nome de Usuário Não Definido'; // Exibe o nome
+    final accountName = _profileData!['name_account'] ??
+        'Nome de Usuário Não Definido'; // Exibe o nome
 
     return Scaffold(
       appBar: AppBar(
@@ -212,7 +222,9 @@ class _ProfilePageState extends State<ProfilePage> {
           children: [
             // Imagem de Perfil (Avatar)
             GestureDetector(
-              onTap: _uploadAvatar,
+              onTap: _isLoading
+                  ? null
+                  : _uploadAvatar, // Desabilita o upload durante o carregamento
               child: Center(
                 child: Stack(
                   children: [
@@ -244,20 +256,30 @@ class _ProfilePageState extends State<ProfilePage> {
                               ),
                             );
                           },
+                          // Tratamento de erro básico
                           errorBuilder: (context, error, stackTrace) {
                             print('Erro ao carregar avatar: $error');
                             return const SizedBox(width: 120, height: 120);
                           },
                         ),
                       ),
-                    const Positioned(
+                    Positioned(
                       bottom: 0,
                       right: 0,
                       child: CircleAvatar(
                         radius: 18,
-                        backgroundColor: Colors.blueAccent,
-                        child: Icon(Icons.camera_alt,
-                            size: 18, color: Colors.white),
+                        backgroundColor:
+                            _isLoading ? Colors.grey : Colors.blueAccent,
+                        child: _isLoading
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                        Colors.white70)))
+                            : const Icon(Icons.camera_alt,
+                                size: 18, color: Colors.white),
                       ),
                     ),
                   ],
@@ -266,15 +288,15 @@ class _ProfilePageState extends State<ProfilePage> {
             ),
 
             const SizedBox(height: 32),
-            
+
             // EXIBIÇÃO DO NOME DA CONTA
             Center(
               child: Text(
                 accountName,
                 style: const TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
                 ),
               ),
             ),

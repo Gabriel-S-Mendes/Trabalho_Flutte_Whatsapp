@@ -22,15 +22,15 @@ class _LoginPageState extends State<LoginPage> {
   @override
   void initState() {
     super.initState();
-    // 1. Redirecionamento de Sessão
+    // 1. Redirecionamento de Sessão: Verifica se já existe uma sessão ativa.
     _checkInitialSession();
   }
 
-  // Verifica se já existe uma sessão ativa
+  // Verifica se já existe uma sessão ativa e navega para a Home, se sim.
   void _checkInitialSession() {
     final session = supabase.auth.currentSession;
     if (session != null) {
-      // Se houver sessão, navega imediatamente para a Home
+      // Usa addPostFrameCallback para garantir que a navegação ocorra após a construção do widget.
       WidgetsBinding.instance.addPostFrameCallback((_) {
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(builder: (context) => const HomePage()),
@@ -40,7 +40,7 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Future<void> _signIn() async {
-    // 2. Validação mais clara
+    // 2. Validação: Checa se o formulário está válido antes de prosseguir.
     if (!_formKey.currentState!.validate()) {
       return;
     }
@@ -50,30 +50,31 @@ class _LoginPageState extends State<LoginPage> {
     });
 
     try {
-      // O Supabase SDK fará o trim do email/senha, mas manter o trim aqui é uma boa prática
+      // Tenta fazer o login com email e senha.
       await supabase.auth.signInWithPassword(
         email: _emailController.text.trim(),
         password: _passwordController.text.trim(),
       );
 
-      // Se logado com sucesso, o Session Listener (que geralmente está no Widget pai ou no main)
-      // é a forma mais robusta de lidar com a navegação.
-      // Contudo, para fins práticos e seguindo o seu código, mantemos a navegação direta aqui.
+      // Se logado com sucesso, navega para a HomePage.
       if (mounted) {
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(builder: (context) => const HomePage()),
         );
       }
     } on AuthException catch (error) {
+      // Trata erros específicos de autenticação do Supabase.
       if (mounted) {
         _showSnackBar(context, error.message, isError: true);
       }
     } catch (error) {
+      // Trata outros erros inesperados.
       if (mounted) {
         _showSnackBar(context, 'Ocorreu um erro inesperado: $error',
             isError: true);
       }
     } finally {
+      // Garante que o indicador de carregamento seja removido.
       if (mounted) {
         setState(() {
           _isLoading = false;
@@ -82,22 +83,24 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
-  // Função auxiliar para exibir o SnackBar
+  // Função auxiliar para exibir o SnackBar (notificação)
   void _showSnackBar(BuildContext context, String message,
       {bool isError = false}) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
-        backgroundColor: isError ? Colors.red.shade700 : Colors.green.shade700,
-        behavior: SnackBarBehavior.floating, // Melhor UX
+        backgroundColor: isError
+            ? Colors.red.shade700
+            : Theme.of(context).colorScheme.primary,
+        behavior: SnackBarBehavior.floating,
       ),
     );
   }
 
   // Função para lidar com o "Esqueceu a senha"
   Future<void> _forgotPassword() async {
-    if (_emailController.text.isEmpty) {
-      _showSnackBar(context, 'Por favor, digite seu email primeiro.',
+    if (_emailController.text.trim().isEmpty) {
+      _showSnackBar(context, 'Por favor, digite seu email para redefinição.',
           isError: true);
       return;
     }
@@ -107,17 +110,14 @@ class _LoginPageState extends State<LoginPage> {
     });
 
     try {
-      // Aqui você inicia o fluxo de recuperação de senha do Supabase
       await supabase.auth.resetPasswordForEmail(
         _emailController.text.trim(),
-        // Redireciona o usuário para um link onde ele completará a mudança de senha.
-        // Certifique-se de configurar o URL de redirecionamento no Supabase
+        // Opcional: Especifique um redirectTo para Deep Linking no seu app.
         // redirectTo: 'sua-url-de-deep-link-ou-web',
       );
 
       if (mounted) {
-        _showSnackBar(
-            context, 'Link de redefinição enviado para o seu email!');
+        _showSnackBar(context, 'Link de redefinição enviado para o seu email!');
       }
     } on AuthException catch (error) {
       if (mounted) {
@@ -147,48 +147,69 @@ class _LoginPageState extends State<LoginPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Login')),
+      appBar: AppBar(
+        title: const Text('Entrar'),
+        elevation: 0, // Remove a sombra para um visual mais limpo
+      ),
       body: Center(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24.0),
+          padding: const EdgeInsets.all(
+              32.0), // Aumentei o padding para melhor visualização
           child: Form(
             key: _formKey,
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // Adicione um Logo ou Título de destaque
-                const Text(
+                // Título de destaque
+                Text(
                   'Bem-vindo de volta!',
-                  style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                    fontSize: 32,
+                    fontWeight: FontWeight.w800, // Deixei mais destacado
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
                   textAlign: TextAlign.center,
                 ),
-                const SizedBox(height: 32),
+                const SizedBox(height: 8),
+                const Text(
+                  'Faça login na sua conta para continuar',
+                  style: TextStyle(fontSize: 16, color: Colors.grey),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 48),
+
+                // Campo de Email
                 TextFormField(
                   controller: _emailController,
                   decoration: const InputDecoration(
                     labelText: 'Email',
-                    prefixIcon: Icon(Icons.email),
-                    border: OutlineInputBorder(), // Estilo melhorado
+                    prefixIcon: Icon(Icons.email_outlined),
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.all(Radius.circular(10))),
                   ),
                   keyboardType: TextInputType.emailAddress,
                   validator: (value) {
-                    if (value == null ||
-                        value.isEmpty ||
-                        !RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(value.trim())) {
+                    if (value == null || value.isEmpty) {
+                      return 'O campo de email é obrigatório';
+                    }
+                    if (!RegExp(r'^[^@]+@[^@]+\.[^@]+')
+                        .hasMatch(value.trim())) {
                       return 'Por favor, insira um email válido';
                     }
                     return null;
                   },
                 ),
                 const SizedBox(height: 16),
+
+                // Campo de Senha
                 TextFormField(
                   controller: _passwordController,
                   decoration: InputDecoration(
                     labelText: 'Senha',
-                    prefixIcon: const Icon(Icons.lock),
-                    border: const OutlineInputBorder(), // Estilo melhorado
-                    // Adiciona o ícone para alternar a visibilidade da senha
+                    prefixIcon: const Icon(Icons.lock_outline),
+                    border: const OutlineInputBorder(
+                        borderRadius: BorderRadius.all(Radius.circular(10))),
                     suffixIcon: IconButton(
                       icon: Icon(
                         _isPasswordVisible
@@ -202,15 +223,16 @@ class _LoginPageState extends State<LoginPage> {
                       },
                     ),
                   ),
-                  obscureText: !_isPasswordVisible, // Controla a visibilidade
+                  obscureText: !_isPasswordVisible,
                   validator: (value) {
                     if (value == null || value.isEmpty || value.length < 6) {
-                      return 'A senha deve ter pelo menos 6 caracteres'; // Melhor feedback
+                      return 'A senha deve ter pelo menos 6 caracteres';
                     }
                     return null;
                   },
-                  // Permite submeter o formulário ao pressionar 'Enter'
-                  onFieldSubmitted: (_) => _signIn(),
+                  onFieldSubmitted: (_) => _isLoading
+                      ? null
+                      : _signIn(), // Submete ao pressionar 'Enter'
                 ),
                 const SizedBox(height: 8),
 
@@ -218,27 +240,31 @@ class _LoginPageState extends State<LoginPage> {
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton(
-                    onPressed: _forgotPassword,
-                    child: const Text('Esqueceu a senha?'),
+                    onPressed: _isLoading ? null : _forgotPassword,
+                    child: const Text('Esqueceu a senha?',
+                        style: TextStyle(fontWeight: FontWeight.bold)),
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 24),
 
-                // 3. Botão de Login (com Loading)
+                // Botão de Login (com Loading Indicator)
                 SizedBox(
-                  height: 50, // Altura padrão de botão
+                  height: 56, // Altura maior para melhor toque
                   child: ElevatedButton(
                     onPressed: _isLoading ? null : _signIn,
                     style: ElevatedButton.styleFrom(
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
+                        borderRadius: BorderRadius.circular(10),
                       ),
-                      // Você pode definir cores personalizadas aqui
+                      // Usa a cor primária do tema para o botão
+                      backgroundColor: Theme.of(context).colorScheme.primary,
+                      foregroundColor: Colors.white,
+                      elevation: 4, // Adiciona uma leve sombra
                     ),
                     child: _isLoading
                         ? const SizedBox(
-                            width: 20,
-                            height: 20,
+                            width: 24,
+                            height: 24,
                             child: CircularProgressIndicator(
                               color: Colors.white,
                               strokeWidth: 3,
@@ -246,11 +272,12 @@ class _LoginPageState extends State<LoginPage> {
                           )
                         : const Text(
                             'Entrar',
-                            style: TextStyle(fontSize: 18),
+                            style: TextStyle(
+                                fontSize: 18, fontWeight: FontWeight.bold),
                           ),
                   ),
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 32),
 
                 // Link para o Cadastro
                 TextButton(
@@ -262,7 +289,10 @@ class _LoginPageState extends State<LoginPage> {
                                 builder: (context) => const SignUpPage()),
                           );
                         },
-                  child: const Text('Não tem uma conta? Cadastre-se'),
+                  child: const Text(
+                    'Não tem uma conta? Cadastre-se',
+                    style: TextStyle(fontSize: 16),
+                  ),
                 ),
               ],
             ),

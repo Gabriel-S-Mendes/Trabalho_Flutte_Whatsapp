@@ -4,7 +4,7 @@ import 'login_page.dart';
 import 'main.dart';
 import 'user_list_page.dart'; // Contém a definição de UserListPage e UserListPageState
 import 'create_group_page.dart';
-import 'profile_page.dart'; // 👈 NOVA IMPORTAÇÃO para a tela de perfil
+import 'profile_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -14,6 +14,18 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
+  // ===========================================
+  // CORES PARA O TEMA:
+  // 1. Cor de Destaque (AppBar) - Green/Teal
+  // 2. Fundo do Corpo (Dark Mode)
+  // 3. Cor do Texto
+  // ===========================================
+  // Cor de Destaque da sua tela de Login (Verde-Água)
+  static const Color primaryHighlightColor = Color(0xFF00A38E);
+  static const Color darkBackgroundColor =
+      Color(0xFF1E1E1E); // Fundo Cinza Escuro para o corpo
+  static const Color lightTextColor = Colors.white; // Texto principal claro
+
   // 🚀 Usamos o nome de estado público (UserListPageState)
   final GlobalKey<UserListPageState> _userListKey =
       GlobalKey<UserListPageState>();
@@ -52,10 +64,19 @@ class _HomePageState extends State<HomePage> {
     final userEmail = supabase.auth.currentUser?.email ?? 'Usuário';
 
     return Scaffold(
+      backgroundColor:
+          darkBackgroundColor, // Fundo do Scaffold (Corpo da lista)
+
       appBar: AppBar(
-        title: const Text('Contatos e Grupos'),
+        title: const Text('Contatos e Grupos',
+            style: TextStyle(color: lightTextColor)), // Título Branco
+        centerTitle: true,
+        backgroundColor:
+            primaryHighlightColor, // 👈 COR DE DESTAQUE (Verde-Água)
+        foregroundColor: lightTextColor, // Ícones Brancos
+        elevation: 4, // Adiciona uma leve sombra para separação
         actions: [
-          // 🎯 BOTÃO DE PERFIL (CORRIGIDO)
+          // 🎯 BOTÃO DE PERFIL
           IconButton(
             icon: const Icon(Icons.person),
             tooltip: 'Meu Perfil',
@@ -77,8 +98,11 @@ class _HomePageState extends State<HomePage> {
             onPressed: _navigateToCreateGroup,
           ),
 
+          // ⚠️ Ícone de Logout (em uma cor que se destaca, mas suave)
           IconButton(
-            icon: const Icon(Icons.logout),
+            icon: const Icon(Icons.logout,
+                color:
+                    lightTextColor), // Mantive branco para contraste, ou você pode usar um vermelho suave: Color.fromARGB(255, 255, 179, 179)
             tooltip: 'Sair (Logado como: $userEmail)',
             onPressed: _signOut,
           ),
