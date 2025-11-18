@@ -24,14 +24,12 @@ class _GroupChatPageState extends State<GroupChatPage> {
   final _messageController = TextEditingController();
   late final Stream<List<Map<String, dynamic>>> _messagesStream;
 
-  // Mapa para armazenar ID do usuário -> Nome de exibição (name_account)
   final Map<String, String> _usernames = {};
   final Map<String, List<String>> _reactions = {};
   final ImagePicker _picker = ImagePicker();
 
   bool _isSending = false;
 
-  // Limite de arquivo: 20 MB
   static const int maxFileBytes = 20 * 1024 * 1024;
 
   @override
@@ -48,14 +46,8 @@ class _GroupChatPageState extends State<GroupChatPage> {
     _listenReactions();
   }
 
-  // ----------------------------
-  // Reactions stream
-  // ----------------------------
   void _listenReactions() {
-    supabase
-        .from('group_reactions')
-        .stream(primaryKey: ['id'])
-        .listen((event) {
+    supabase.from('group_reactions').stream(primaryKey: ['id']).listen((event) {
       _syncReactions();
     });
 
@@ -85,24 +77,24 @@ class _GroupChatPageState extends State<GroupChatPage> {
     }
   }
 
-  // ----------------------------
-  // Load usernames (display name)
-  // ----------------------------
   Future<void> _loadUsernames() async {
-    final profiles = await supabase.from('profiles').select('id, name_account, username');
+    final profiles =
+        await supabase.from('profiles').select('id, name_account, username');
 
     for (final p in profiles) {
-      final String displayName = p['name_account'] ?? p['username'] ?? 'Desconhecido';
+      final String displayName =
+          p['name_account'] ?? p['username'] ?? 'Desconhecido';
       _usernames[p['id']] = displayName;
     }
 
     if (mounted) setState(() {});
   }
 
-  // ----------------------------
-  // Send message (text / image / file)
-  // ----------------------------
-  Future<void> _sendMessage({String? content, String? imageUrl, String? fileUrl, String? fileName}) async {
+  Future<void> _sendMessage(
+      {String? content,
+      String? imageUrl,
+      String? fileUrl,
+      String? fileName}) async {
     final text = content?.trim() ?? _messageController.text.trim();
     if ((text.isEmpty && imageUrl == null && fileUrl == null)) return;
 
@@ -128,9 +120,6 @@ class _GroupChatPageState extends State<GroupChatPage> {
     }
   }
 
-  // ----------------------------
-  // Send image (existing)
-  // ----------------------------
   Future<void> _pickAndSendImage() async {
     final XFile? picked =
         await _picker.pickImage(source: ImageSource.gallery, imageQuality: 70);
@@ -161,17 +150,14 @@ class _GroupChatPageState extends State<GroupChatPage> {
     }
   }
 
-  // ----------------------------
-  // Send general file (up to 20MB) to bucket 'cha-files'
-  // ----------------------------
   Future<void> _pickAndSendFile() async {
     try {
       final result = await FilePicker.platform.pickFiles(
         withReadStream: false,
-        withData: true, // we want bytes
+        withData: true,
       );
 
-      if (result == null) return; // usuario cancelou
+      if (result == null) return;
 
       final PlatformFile file = result.files.first;
 
@@ -182,8 +168,10 @@ class _GroupChatPageState extends State<GroupChatPage> {
       }
 
       final String originalName = file.name;
-      final String ext = originalName.contains('.') ? originalName.split('.').last : '';
-      final String fileName = "${DateTime.now().millisecondsSinceEpoch}_${supabase.auth.currentUser?.id ?? 'anon'}${ext.isNotEmpty ? '.${ext}' : ''}";
+      final String ext =
+          originalName.contains('.') ? originalName.split('.').last : '';
+      final String fileName =
+          "${DateTime.now().millisecondsSinceEpoch}_${supabase.auth.currentUser?.id ?? 'anon'}${ext.isNotEmpty ? '.${ext}' : ''}";
 
       final Uint8List? bytes = file.bytes;
       if (bytes == null) {
@@ -193,7 +181,6 @@ class _GroupChatPageState extends State<GroupChatPage> {
 
       setState(() => _isSending = true);
 
-      // Upload para cha-files
       await supabase.storage.from('cha-files').uploadBinary(
             fileName,
             bytes,
@@ -203,9 +190,9 @@ class _GroupChatPageState extends State<GroupChatPage> {
             ),
           );
 
-      final String fileUrl = supabase.storage.from('cha-files').getPublicUrl(fileName);
+      final String fileUrl =
+          supabase.storage.from('cha-files').getPublicUrl(fileName);
 
-      // Salvar mensagem com file_url + file_name
       await _sendMessage(fileUrl: fileUrl, fileName: originalName);
     } catch (e) {
       _showSnackBar("Erro ao enviar arquivo: $e");
@@ -214,7 +201,6 @@ class _GroupChatPageState extends State<GroupChatPage> {
     }
   }
 
-  // Pequena heurística de MIME
   String? _mimeFromExtension(String ext) {
     final e = ext.toLowerCase();
     if (e == 'png') return 'image/png';
@@ -224,16 +210,15 @@ class _GroupChatPageState extends State<GroupChatPage> {
     if (e == 'mov') return 'video/quicktime';
     if (e == 'pdf') return 'application/pdf';
     if (e == 'zip') return 'application/zip';
-    if (e == 'docx') return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    if (e == 'docx')
+      return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
     if (e == 'doc') return 'application/msword';
-    if (e == 'xlsx') return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    if (e == 'xlsx')
+      return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
     if (e == 'mp3') return 'audio/mpeg';
     return null;
   }
 
-  // ----------------------------
-  // Reactions (one per user)
-  // ----------------------------
   void _addReaction(String messageId, String emoji) async {
     final userId = supabase.auth.currentUser!.id;
 
@@ -249,9 +234,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
         'user_id': userId,
         'emoji': emoji,
       });
-    } catch (e) {
-      print("Erro ao salvar reação: $e");
-    }
+    } catch (e) {}
   }
 
   Future<void> _showReactionsDialog(String messageId) async {
@@ -276,9 +259,6 @@ class _GroupChatPageState extends State<GroupChatPage> {
     if (emoji != null) _addReaction(messageId, emoji);
   }
 
-  // ----------------------------
-  // Show members (com botão sair incluso)
-  // ----------------------------
   Future<void> _showMembers() async {
     try {
       final members = await supabase
@@ -300,7 +280,9 @@ class _GroupChatPageState extends State<GroupChatPage> {
             .maybeSingle();
 
         final String displayName =
-            profile?['name_account'] as String? ?? profile?['username'] as String? ?? 'Desconhecido';
+            profile?['name_account'] as String? ??
+                profile?['username'] as String? ??
+                'Desconhecido';
 
         detailed.add({
           'user_id': userId,
@@ -316,44 +298,12 @@ class _GroupChatPageState extends State<GroupChatPage> {
             width: double.maxFinite,
             height: 350,
             child: ListView.builder(
-              itemCount: detailed.length + 1, // +1 = botão sair
+              itemCount: detailed.length,
               itemBuilder: (_, i) {
-                if (i == detailed.length) {
-                  // Botão sair do grupo
-                  return ListTile(
-                    leading: const Icon(Icons.logout, color: Colors.red),
-                    title: const Text(
-                      "Sair do grupo",
-                      style: TextStyle(color: Colors.red),
-                    ),
-                    onTap: () async {
-                      final userId = supabase.auth.currentUser!.id;
-
-                      try {
-                        await supabase
-                            .from('group_members')
-                            .delete()
-                            .eq('group_id', widget.groupId)
-                            .eq('user_id', userId);
-
-                        Navigator.pop(ctx); // fecha popup
-                        Navigator.pop(context); // fecha grupo
-
-                        if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text("Você saiu do grupo.")),
-                          );
-                        }
-                      } catch (e) {
-                        if (mounted) _showSnackBar("Erro ao sair do grupo: $e");
-                      }
-                    },
-                  );
-                }
-
                 final m = detailed[i];
                 final String name = m['display_name'] as String;
-                final String firstLetter = name.isNotEmpty ? name[0].toUpperCase() : '?';
+                final String firstLetter =
+                    name.isNotEmpty ? name[0].toUpperCase() : '?';
 
                 return ListTile(
                   leading: CircleAvatar(child: Text(firstLetter)),
@@ -376,9 +326,6 @@ class _GroupChatPageState extends State<GroupChatPage> {
     }
   }
 
-  // ----------------------------
-  // UI helpers
-  // ----------------------------
   void _showSnackBar(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
@@ -393,9 +340,6 @@ class _GroupChatPageState extends State<GroupChatPage> {
     await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
-  // ----------------------------
-  // Build
-  // ----------------------------
   @override
   Widget build(BuildContext context) {
     final myId = supabase.auth.currentUser?.id ?? '';
@@ -450,8 +394,6 @@ class _GroupChatPageState extends State<GroupChatPage> {
               },
             ),
           ),
-
-          // Campo de texto + botões
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
@@ -460,25 +402,21 @@ class _GroupChatPageState extends State<GroupChatPage> {
             ),
             child: Row(
               children: [
-                // Imagem
                 IconButton(
                   icon: Icon(Icons.image,
                       color: _isSending ? Colors.grey : Colors.green),
                   onPressed: _isSending ? null : _pickAndSendImage,
                 ),
-
-                // Arquivo geral (clip)
                 IconButton(
                   icon: Icon(Icons.attach_file,
                       color: _isSending ? Colors.grey : Colors.blueGrey),
                   onPressed: _isSending ? null : _pickAndSendFile,
                 ),
-
                 Expanded(
                   child: TextField(
                     controller: _messageController,
-                    decoration: const InputDecoration.collapsed(
-                        hintText: 'Mensagem...'),
+                    decoration:
+                        const InputDecoration.collapsed(hintText: 'Mensagem...'),
                     onSubmitted: (_) => _sendMessage(),
                   ),
                 ),
@@ -495,9 +433,6 @@ class _GroupChatPageState extends State<GroupChatPage> {
   }
 }
 
-// ----------------------------
-// Group bubble with file support
-// ----------------------------
 class _GroupBubble extends StatelessWidget {
   final String? message;
   final String? imageUrl;
@@ -522,7 +457,8 @@ class _GroupBubble extends StatelessWidget {
   Widget _buildFileRow(BuildContext context) {
     if (fileUrl == null || fileName == null) return const SizedBox.shrink();
 
-    final ext = fileName!.contains('.') ? fileName!.split('.').last.toLowerCase() : '';
+    final ext =
+        fileName!.contains('.') ? fileName!.split('.').last.toLowerCase() : '';
     IconData icon;
     if (['png', 'jpg', 'jpeg', 'gif'].contains(ext)) {
       icon = Icons.image;
@@ -565,7 +501,9 @@ class _GroupBubble extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
-            Icon(Icons.download_rounded, size: 18, color: isMe ? Colors.white70 : Colors.black54),
+            Icon(Icons.download_rounded,
+                size: 18,
+                color: isMe ? Colors.white70 : Colors.black54),
           ],
         ),
       ),
@@ -580,7 +518,9 @@ class _GroupBubble extends StatelessWidget {
         margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
-          color: isMe ? Colors.green[200] : Colors.grey[300],
+          color: isMe
+              ? const Color.fromARGB(255, 48, 51, 48)
+              : const Color.fromARGB(255, 94, 92, 92),
           borderRadius: BorderRadius.only(
             topLeft: const Radius.circular(12),
             topRight: const Radius.circular(12),
@@ -602,18 +542,14 @@ class _GroupBubble extends StatelessWidget {
                 color: isMe ? Colors.green[900] : Colors.black87,
               ),
             ),
-
             if (message != null) ...[
               const SizedBox(height: 4),
               Text(message!, style: const TextStyle(fontSize: 15)),
             ],
-
-            // file (se existir)
             if (fileUrl != null && fileName != null) ...[
               const SizedBox(height: 6),
               _buildFileRow(context),
             ],
-
             if (imageUrl != null) ...[
               const SizedBox(height: 6),
               ClipRRect(
@@ -621,13 +557,13 @@ class _GroupBubble extends StatelessWidget {
                 child: Image.network(imageUrl!),
               ),
             ],
-
             if (reactions.isNotEmpty) ...[
               const SizedBox(height: 6),
               Wrap(
                 spacing: 4,
                 children: reactions
-                    .map((e) => Text(e, style: const TextStyle(fontSize: 16)))
+                    .map((e) =>
+                        Text(e, style: const TextStyle(fontSize: 16)))
                     .toList(),
               ),
             ],
