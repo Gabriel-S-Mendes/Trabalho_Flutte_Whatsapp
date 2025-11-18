@@ -6,7 +6,7 @@ import 'main.dart';
 import 'dart:async';
 
 // ----------------------------------------------------------
-// 🟦 WIDGET DE BOLHA DE MENSAGEM
+// 🟦 WIDGET DE BOLHA DE MENSAGEM (Sem alterações)
 // ----------------------------------------------------------
 class ChatBubble extends StatelessWidget {
   const ChatBubble({
@@ -381,7 +381,9 @@ class _DirectMessagePageState extends State<DirectMessagePage> {
   // ----------------------------------------------------------
   @override
   Widget build(BuildContext context) {
-    final username = widget.recipientProfile['username'] as String;
+    // 🎯 CORREÇÃO: Puxa 'name_account' e usa 'username' como fallback
+    final displayName = widget.recipientProfile['name_account'] as String? ?? 
+                        widget.recipientProfile['username'] as String? ?? 'Usuário Desconhecido';
 
     return Scaffold(
       appBar: AppBar(
@@ -405,7 +407,8 @@ class _DirectMessagePageState extends State<DirectMessagePage> {
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(username,
+                // 🎯 CORREÇÃO: Usa displayName em vez de username
+                Text(displayName,
                     style: const TextStyle(
                         fontSize: 18, fontWeight: FontWeight.bold)),
                 StreamBuilder<Map<String, dynamic>>(
